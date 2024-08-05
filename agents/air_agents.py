@@ -3,36 +3,66 @@ from .base_agent import BaseAgent
 
 
 class UAV(BaseAgent):
-    def __init__(self, env, config, agent_id):
-        super().__init__(env, config, agent_id)
+    def __init__(self, agent_id, position, env):
+        super().__init__(agent_id, position, env)
         self.type = "uav"
-        self.altitude = 5
-        self.max_altitude = config['uav_max_altitude']
-
-    def move(self, action):
-        super().move(action)
-
-        # Adjust altitude
-        if action == 4:  # Perform action
-            self.altitude = np.clip(self.altitude + np.random.randint(-1, 2), 1, self.max_altitude)
-
-        self.battery -= 0.2  # UAVs consume more battery
+        self.altitude = 50.0
+        self.max_altitude = 100.0
+        self.min_altitude = 10.0
+        self.vertical_speed = 5.0
+        self.camera_range = 30.0
+        self.task_types = ["transport", "rescue", "monitor"]
 
     def act(self, state):
-        action = np.zeros(5)
-        # Simple behavior: alternate between moving and performing action
-        if self.env.time % 2 == 0:
-            action[np.random.randint(0, 4)] = 1  # Random movement
+        if self.current_task:
+            return self.perform_task()
+        return self.explore()
+
+    def update(self, action):
+        horizontal_action = action[:2]
+        vertical_action = action[2]
+
+        self.acceleration = horizontal_action
+        self.move(self.env.time_step)
+
+        self.altitude += vertical_action * self.vertical_speed * self.env.time_step
+        self.altitude = np.clip(self.altitude, self.min_altitude, self.max_altitude)
+
+        self.consume_energy(0.3 + 0.1 * abs(vertical_action))
+
+    def perform_task(self):
+        if self.current_task.type == "transport":
+            return self.transport_action()
+        elif self.current_task.type == "rescue":
+            return self.rescue_action()
+        elif self.current_task.type == "monitor":
+            return self.monitor_action()
         else:
-            action[4] = 1  # Perform action (area monitoring)
-        return action
+            return self.explore()
 
-    def update(self, state, action, reward, next_state, done):
-        # For simplicity, we're not implementing learning here
-        pass
+    def transport_action(self):
+        target = self.current_task.get_current_target()
+        direction = target - self.position
+        horizontal_action = direction[:2] / np.linalg.norm(direction[:2])
+        vertical_action = np.sign(target[2] - self.altitude)
+        return np.append(horizontal_action, vertical_action)
 
-    def relay_signal(self, message, source, target):
-        return self.env.relay_message(self, message, source, target)
+    def rescue_action(self):
+        # Similar to transport_action, but might prioritize speed
+        return self.transport_action()
 
-    def monitor_area(self):
-        return self.env.get_area_info(self.position, self.altitude)
+    def monitor_action(self):
+        center = self.current_task.get_center()
+        radius = self.current_task.get_radius()
+        angle = (self.env.current_time * 0.1) % (2 * np.pi)
+        target = center + radius * np.array([np.cos(angle), np.sin(angle), 0])
+        return self.transport_action()
+
+    def explore(self):
+        # Random exploration with altitude changes
+        horizontal_action = np.random.uniform(-1, 1, 2)
+        vertical_action = np.random.uniform(-1, 1)
+        return np.append(horizontal_action, vertical_action)
+
+    def get_camera_view(self):
+        return self.env.get_objects_in_range(self.position, self.camera_range)
