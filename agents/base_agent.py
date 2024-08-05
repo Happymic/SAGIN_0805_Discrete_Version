@@ -1,48 +1,57 @@
 import numpy as np
+from abc import ABC, abstractmethod
 
-
-class BaseAgent:
-    def __init__(self, env, config, agent_id):
-        self.env = env
-        self.config = config
+class BaseAgent(ABC):
+    def __init__(self, agent_id, position, env):
         self.id = agent_id
-        self.position = None
-        self.type = None
+        self.position = np.array(position)
+        self.env = env
         self.battery = 100.0
+        self.velocity = np.zeros(2)
+        self.acceleration = np.zeros(2)
+        self.max_speed = 5.0
+        self.max_acceleration = 2.0
+        self.communication_range = 10.0
+        self.sensor_range = 15.0
+        self.current_task = None
 
-    def reset(self):
-        self.position = self.env.grid_world.get_random_position()
-        self.battery = 100.0
+    @abstractmethod
+    def act(self, state):
+        pass
 
-    def move(self, action):
-        if action == 0:  # Stay
-            return
+    @abstractmethod
+    def update(self, action):
+        pass
 
-        directions = [
-            (0, 1),  # Up
-            (1, 0),  # Right
-            (0, -1),  # Down
-            (-1, 0)  # Left
-        ]
-
-        dx, dy = directions[action - 1]
-        new_position = self.position + np.array([dx, dy])
-
-        if self.env.grid_world.is_valid_position(new_position):
+    def move(self, delta_time):
+        self.velocity += self.acceleration * delta_time
+        self.velocity = np.clip(self.velocity, -self.max_speed, self.max_speed)
+        new_position = self.position + self.velocity * delta_time
+        if self.env.is_valid_position(new_position):
             self.position = new_position
-            self.battery -= 0.1  # Decrease battery for movement
+        else:
+            self.velocity = np.zeros(2)
+
+    def consume_energy(self, amount):
+        self.battery -= amount
+        if self.battery < 0:
+            self.battery = 0
+
+    def charge(self, amount):
+        self.battery = min(100.0, self.battery + amount)
 
     def communicate(self, message, target=None):
-        if target:
-            return self.env.send_message(self, message, target)
-        else:
-            return self.env.broadcast_message(self, message)
+        return self.env.communicate(self, message, target)
 
-    def observe(self):
-        return self.env.get_observation()[self.env.agents.index(self)]
+    def sense_environment(self):
+        return self.env.get_objects_in_range(self.position, self.sensor_range)
 
-    def act(self, state):
-        raise NotImplementedError
+    def assign_task(self, task):
+        self.current_task = task
 
-    def update(self, state, action, reward, next_state, done):
-        raise NotImplementedError
+    def complete_task(self):
+        self.current_task = None
+
+    def is_in_communication_range(self, other_agent):
+        distance = np.linalg.norm(self.position - other_agent.position)
+        return distance <= self.communication_range
