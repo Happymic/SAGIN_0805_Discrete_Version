@@ -1,0 +1,6 @@
+numpy==1.21.0
+torch==1.9.0
+pygame==2.0.1
+pyyaml==5.4.1
+gym==0.18.3
+tqdm==4.62.3

@@ -1,0 +1,56 @@
+# Environment settings
+grid_width: 15
+grid_height: 15
+num_obstacles: 20
+num_pois: 8
+num_disaster_areas: 3
+max_time: 500
+
+# Agent settings
+num_signal_detectors: 2
+num_transport_vehicles: 3
+num_rescue_vehicles: 3
+num_uavs: 2
+num_satellites: 1
+num_fixed_stations: 1
+uav_max_altitude: 8
+satellite_orbit_speed: 1
+fixed_station_range: 4
+fixed_station_computing_power: 8
+
+# Communication settings
+communication_range: 4
+
+# Task settings
+num_tasks: 10
+
+# Training settings
+num_episodes: 100
+max_steps: 150
+learning_rate: 0.001
+gamma: 0.99
+epsilon_start: 1.0
+epsilon_end: 0.01
+epsilon_decay: 0.995
+buffer_size: 1000
+batch_size: 32
+update_every: 4
+hidden_dim: 64
+
+# MADDPG settings
+actor_lr: 0.0001
+critic_lr: 0.001
+
+# Hybrid trainer settings
+switch_threshold: 30
+
+# Visualization settings
+screen_width: 800
+screen_height: 800
+fps: 30
+visualize_every: 10
+print_every: 5
+
+model_type: 'dqn'  # 或 'ddpg'
+use_maddpg: true  # 或 false
+num_eval_episodes: 10
