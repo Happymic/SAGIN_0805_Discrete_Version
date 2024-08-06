@@ -1,37 +1,72 @@
 import numpy as np
 from .base_agent import BaseAgent
+import logging
 
+logger = logging.getLogger(__name__)
 class Satellite(BaseAgent):
-    def __init__(self, env, config, agent_id):
-        super().__init__(env, config, agent_id)
+    def __init__(self, agent_id, position, env):
+        super().__init__(agent_id, position, env)
         self.type = "satellite"
-        self.orbit_position = 0
-        self.orbit_speed = config['satellite_orbit_speed']
-
-    def move(self, action):
-        # Satellites move in a predefined orbit
-        self.orbit_position = (self.orbit_position + self.orbit_speed) % 360
-        self.position = self.calculate_position()
-        self.battery -= 0.05  # Satellites consume less battery
-
-    def calculate_position(self):
-        # Convert orbit position to grid position
-        x = int(self.env.grid_world.width / 2 + (self.env.grid_world.width / 2 - 1) * np.cos(np.radians(self.orbit_position)))
-        y = int(self.env.grid_world.height / 2 + (self.env.grid_world.height / 2 - 1) * np.sin(np.radians(self.orbit_position)))
-        return np.array([x, y])
+        self.orbit_radius = 1000.0  # Large value to simulate high altitude
+        self.orbit_speed = 0.001  # Slow orbit speed
+        self.orbit_angle = 0
+        self.global_communication_range = 500.0
+        self.gps_accuracy = 1.0  # GPS accuracy in meters
 
     def act(self, state):
-        # Satellites always perform their action (global monitoring and task assignment)
-        action = np.zeros(5)
-        action[4] = 1
-        return action
+        # Satellites don't need to make decisions, they just orbit
+        return np.zeros(2)
 
-    def update(self, state, action, reward, next_state, done):
-        # For simplicity, we're not implementing learning here
-        pass
+    def update(self, action):
+        self.orbit()
+        self.relay_communications()
+        self.provide_gps_data()
+        self.consume_energy(0.1)
 
-    def global_monitoring(self):
-        return self.env.get_global_info()
+    def orbit(self):
+        self.orbit_angle += self.orbit_speed
+        if self.orbit_angle >= 2 * np.pi:
+            self.orbit_angle -= 2 * np.pi
 
-    def schedule_task(self, task):
-        return self.env.assign_task(task)
+        self.position[0] = self.env.world.width / 2 + self.orbit_radius * np.cos(self.orbit_angle)
+        self.position[1] = self.env.world.height / 2 + self.orbit_radius * np.sin(self.orbit_angle)
+
+    def relay_communications(self):
+        messages = self.env.communication_model.get_undelivered_messages()
+        for message in messages:
+            if self.can_relay(message):
+                self.env.communication_model.deliver_message(message)
+
+    def can_relay(self, message):
+        sender_distance = np.linalg.norm(message.sender.position - self.position)
+        receiver_distance = np.linalg.norm(message.receiver.position - self.position)
+        return (sender_distance <= self.global_communication_range and
+                receiver_distance <= self.global_communication_range)
+
+    def provide_gps_data(self):
+        for agent in self.env.agents:
+            if agent.type != "satellite":
+                true_position = agent.position
+                error = np.random.normal(0, self.gps_accuracy, 2)
+                gps_position = true_position + error
+                agent.update_gps_position(gps_position)
+
+    def get_earth_observation_data(self):
+        # Simulate earth observation capabilities
+        observation_radius = self.orbit_radius / 2
+        return self.env.get_objects_in_range(self.position, observation_radius)
+
+    def provide_gps_data(self):
+        for agent in self.env.agents:
+            if hasattr(agent, 'update_gps_position'):
+                true_position = agent.position
+                error = np.random.normal(0, self.gps_accuracy, 2)
+                gps_position = true_position + error
+                agent.update_gps_position(gps_position)
+            else:
+                logger.warning(f"Agent {agent.id} does not support GPS updates")
+    def get_state_dim(self):
+        return super().get_state_dim() + 1  # Add orbit angle to state
+
+    def get_action_dim(self):
+        return 0  # Satellites don't take actions in this model

@@ -1,56 +1,92 @@
 # Environment settings
-grid_width: 15
-grid_height: 15
-num_obstacles: 20
-num_pois: 8
-num_disaster_areas: 3
+world_width: 500
+world_height: 500
+num_obstacles: 10
+num_pois: 5
+num_disaster_areas: 1
+num_dynamic_obstacles: 2
 max_time: 500
+time_step: 0.2
 
 # Agent settings
 num_signal_detectors: 2
-num_transport_vehicles: 3
-num_rescue_vehicles: 3
-num_uavs: 2
+num_transport_vehicles: 1
+num_rescue_vehicles: 1
+num_uavs: 1
 num_satellites: 1
 num_fixed_stations: 1
-uav_max_altitude: 8
-satellite_orbit_speed: 1
-fixed_station_range: 4
-fixed_station_computing_power: 8
+episodes_per_update: 5
+max_speed: 3.0
+max_acceleration: 1.5
+battery_capacity: 80.0
+energy_consumption_rate: 0.05
+max_steps: 500
+
+# Sensor settings
+camera_range: 30
+lidar_range: 60
+radar_range: 100
+gps_accuracy: 3
 
 # Communication settings
-communication_range: 4
+short_range_protocol_range: 50
+long_range_protocol_range: 500
+packet_loss_rate: 0.05
+communication_delay: 0.1
 
 # Task settings
-num_tasks: 10
+task_generation_rate: 0.05
+min_task_duration: 25
+max_task_duration: 100
+
+# Weather settings
+weather_change_rate: 0.005
+
+# Learning settings
+hidden_dim: 128
+num_options: 2
+actor_lr: 0.0005
+critic_lr: 0.001
+gamma: 0.99
+tau: 0.01
+batch_size: 32
+buffer_size: 100000
+noise_std: 0.1
 
 # Training settings
-num_episodes: 100
-max_steps: 150
-learning_rate: 0.001
-gamma: 0.99
-epsilon_start: 1.0
-epsilon_end: 0.01
-epsilon_decay: 0.995
-buffer_size: 1000
-batch_size: 32
-update_every: 4
-hidden_dim: 64
-
-# MADDPG settings
-actor_lr: 0.0001
-critic_lr: 0.001
-
-# Hybrid trainer settings
-switch_threshold: 30
+num_episodes: 1000
+max_steps_per_episode: 500
+eval_interval: 50
+num_eval_episodes: 5
 
 # Visualization settings
-screen_width: 800
-screen_height: 800
+screen_width: 640
+screen_height: 640
 fps: 30
-visualize_every: 10
-print_every: 5
 
-model_type: 'dqn'  # 或 'ddpg'
-use_maddpg: true  # 或 false
-num_eval_episodes: 10
+state_components:
+  include_agents: true
+  include_weather: true
+  include_terrain: true
+  terrain_resolution: 50
+  include_time: true
+  include_tasks: true
+  include_obstacles: true
+
+# Dynamic obstacle settings
+dynamic_obstacle_speed: 1.5
+dynamic_obstacle_size: 8
+
+# Agent step size
+agent_step_size: 0.8
+
+# Task generation probability
+task_generation_probability: 0.05
+
+# Save interval for model checkpoints
+save_interval: 50
+
+# Distributed simulation settings
+num_processes: 2
+# Visualization settings
+visualization_interval: 1  # 添加这一行，表示每步都更新可视化

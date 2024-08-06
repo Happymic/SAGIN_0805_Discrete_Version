@@ -1,131 +1,196 @@
 import pygame
 import numpy as np
+from pygame import gfxdraw
+
 
 class PygameVisualizer:
     def __init__(self, env, config):
         pygame.init()
         self.env = env
         self.config = config
-        self.screen_width = config['screen_width']
-        self.screen_height = config['screen_height']
-        self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
+        self.width = config['screen_width']
+        self.height = config['screen_height']
+        self.screen = pygame.display.set_mode((self.width, self.height))
         pygame.display.set_caption("SAGIN Simulation")
         self.clock = pygame.time.Clock()
-        self.font = pygame.font.Font(None, 24)
-        self.colors = {
-            "background": (240, 240, 240),
-            "grid": (200, 200, 200),
-            "obstacle": (100, 100, 100),
-            "poi": (0, 200, 0),
-            "disaster": (200, 0, 0),
-            "signal_detector": (0, 0, 255),
-            "transport_vehicle": (255, 165, 0),
-            "rescue_vehicle": (255, 0, 255),
-            "uav": (0, 255, 255),
-            "satellite": (128, 128, 128),
-            "fixed_station": (165, 42, 42),
-            "text": (0, 0, 0),
-            "task_pending": (255, 255, 0),
-            "task_completed": (0, 255, 0)
+
+        self.main_map_surface = pygame.Surface((int(self.width * 0.75), int(self.height * 0.8)))
+        self.info_panel_surface = pygame.Surface((int(self.width * 0.25), int(self.height * 0.8)))
+        self.control_panel_surface = pygame.Surface((self.width, int(self.height * 0.2)))
+        self.mini_map_surface = pygame.Surface((int(self.width * 0.2), int(self.height * 0.2)))
+
+        self.fonts = {
+            'small': pygame.font.Font(None, 18),
+            'medium': pygame.font.Font(None, 24),
+            'large': pygame.font.Font(None, 32)
         }
-        self.cell_size = min(self.screen_width // env.grid_world.width,
-                             self.screen_height // env.grid_world.height)
-        self.grid_offset_x = (self.screen_width - self.cell_size * env.grid_world.width) // 2
-        self.grid_offset_y = (self.screen_height - self.cell_size * env.grid_world.height) // 2
-        self.episode = 0
-        self.step = 0
 
-    def draw_grid(self):
-        for x in range(self.env.grid_world.width + 1):
-            start_pos = (self.grid_offset_x + x * self.cell_size, self.grid_offset_y)
-            end_pos = (self.grid_offset_x + x * self.cell_size, self.grid_offset_y + self.env.grid_world.height * self.cell_size)
-            pygame.draw.line(self.screen, self.colors["grid"], start_pos, end_pos)
-        for y in range(self.env.grid_world.height + 1):
-            start_pos = (self.grid_offset_x, self.grid_offset_y + y * self.cell_size)
-            end_pos = (self.grid_offset_x + self.env.grid_world.width * self.cell_size, self.grid_offset_y + y * self.cell_size)
-            pygame.draw.line(self.screen, self.colors["grid"], start_pos, end_pos)
+        self.colors = self.initialize_colors()
+        self.camera = {'x': 0, 'y': 0, 'zoom': 1}
+        self.selected_agent = None
+        self.visualization_mode = 'normal'
 
-    def draw_cell(self, x, y, color):
-        pygame.draw.rect(self.screen, color,
-                         (self.grid_offset_x + x * self.cell_size,
-                          self.grid_offset_y + y * self.cell_size,
-                          self.cell_size, self.cell_size))
+    def initialize_colors(self):
+        return {
+            'background': (240, 240, 240),
+            'terrain': [(50, 100, 50), (100, 200, 100), (200, 230, 180)],
+            'water': (100, 150, 255),
+            'obstacle': (100, 100, 100),
+            'agent_colors': {
+                'SignalDetector': (255, 255, 0),
+                'TransportVehicle': (0, 0, 255),
+                'RescueVehicle': (255, 0, 0),
+                'UAV': (0, 255, 0),
+                'Satellite': (200, 200, 200),
+                'FixedStation': (128, 0, 128)
+            },
+            'task': (255, 165, 0),
+            'text': (0, 0, 0),
+            'panel_bg': (220, 220, 220)
+        }
 
-    def draw_agents(self):
-        for agent in self.env.agents:
-            x, y = agent.position
-            center = (int(self.grid_offset_x + (x + 0.5) * self.cell_size),
-                      int(self.grid_offset_y + (y + 0.5) * self.cell_size))
-            pygame.draw.circle(self.screen, self.colors[agent.type], center, int(self.cell_size * 0.4))
-            self.draw_text(agent.type[:2].upper(), (center[0] - 10, center[1] - 10), size=18)
-
-    def draw_tasks(self):
-        for i, task in enumerate(self.env.tasks):
-            start_x, start_y = task["start"]
-            end_x, end_y = task["end"]
-            start_pos = (int(self.grid_offset_x + (start_x + 0.5) * self.cell_size),
-                         int(self.grid_offset_y + (start_y + 0.5) * self.cell_size))
-            end_pos = (int(self.grid_offset_x + (end_x + 0.5) * self.cell_size),
-                       int(self.grid_offset_y + (end_y + 0.5) * self.cell_size))
-            color = self.colors["task_pending"] if task["status"] == "pending" else self.colors["task_completed"]
-            pygame.draw.line(self.screen, color, start_pos, end_pos, 2)
-            self.draw_text(f"T{i}", (start_pos[0] - 10, start_pos[1] - 20), size=18)
-
-    def draw_info(self):
-        info_text = [
-            f"Episode: {self.episode}",
-            f"Step: {self.step}",
-            f"Time: {self.env.time}",
-            f"Tasks: {len(self.env.tasks)}",
-            f"Completed: {sum(1 for task in self.env.tasks if task['status'] == 'completed')}"
-        ]
-        for i, text in enumerate(info_text):
-            self.draw_text(text, (10, 10 + i * 30))
-
-    def draw_text(self, text, position, size=24, color=None):
-        if color is None:
-            color = self.colors["text"]
-        font = pygame.font.Font(None, size)
-        try:
-            text_surface = font.render(str(text), True, color)
-            self.screen.blit(text_surface, position)
-        except Exception as e:
-            print(f"Error rendering text: {text}, Error: {e}")
-
-    def update(self, episode, step):
+    def update(self, env, episode, step, episode_reward):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                pygame.quit()
                 return False
+            self.handle_input(event)
 
-        self.screen.fill(self.colors["background"])
-        self.draw_grid()
+        self.screen.fill(self.colors['background'])
+        self.update_main_map()
+        self.update_info_panel(episode, step, episode_reward)
+        self.update_control_panel()
+        self.update_mini_map()
 
-        for x, y in self.env.grid_world.obstacles:
-            self.draw_cell(x, y, self.colors["obstacle"])
-        for x, y in self.env.grid_world.pois:
-            self.draw_cell(x, y, self.colors["poi"])
-        for x, y in self.env.grid_world.disaster_areas:
-            self.draw_cell(x, y, self.colors["disaster"])
-
-        self.draw_agents()
-        self.draw_tasks()
-        self.draw_info(episode, step)
+        self.screen.blit(self.main_map_surface, (0, 0))
+        self.screen.blit(self.info_panel_surface, (int(self.width * 0.75), 0))
+        self.screen.blit(self.control_panel_surface, (0, int(self.height * 0.8)))
+        self.screen.blit(self.mini_map_surface, (int(self.width * 0.8), int(self.height * 0.8)))
 
         pygame.display.flip()
         self.clock.tick(self.config['fps'])
         return True
 
-    def draw_info(self, episode, step):
-        info_text = [
+    def update_main_map(self):
+        self.main_map_surface.fill(self.colors['background'])
+        self.draw_terrain()
+        self.draw_obstacles()
+        self.draw_agents()
+        self.draw_tasks()
+
+    def draw_terrain(self):
+        terrain = self.env.terrain.elevation
+        scale_x = self.main_map_surface.get_width() / terrain.shape[0]
+        scale_y = self.main_map_surface.get_height() / terrain.shape[1]
+        for x in range(terrain.shape[0]):
+            for y in range(terrain.shape[1]):
+                height = terrain[x, y]
+                color = self.get_terrain_color(height)
+                rect = pygame.Rect(int(x * scale_x), int(y * scale_y), int(scale_x) + 1, int(scale_y) + 1)
+                pygame.draw.rect(self.main_map_surface, color, rect)
+
+    def get_terrain_color(self, height):
+        if height < 0.2:
+            return self.colors['water']
+        elif height < 0.5:
+            return self.colors['terrain'][0]
+        elif height < 0.8:
+            return self.colors['terrain'][1]
+        else:
+            return self.colors['terrain'][2]
+
+    def draw_obstacles(self):
+        for obstacle in self.env.world.obstacles:
+            if obstacle['type'] == 'circle':
+                pygame.draw.circle(self.main_map_surface, self.colors['obstacle'],
+                                   self.world_to_screen(obstacle['center']),
+                                   int(obstacle['radius'] * self.main_map_surface.get_width() / self.env.world.width))
+            elif obstacle['type'] == 'polygon':
+                pygame.draw.polygon(self.main_map_surface, self.colors['obstacle'],
+                                    [self.world_to_screen(point) for point in obstacle['points']])
+
+    def draw_agents(self):
+        for agent in self.env.agents:
+            color = self.colors['agent_colors'].get(type(agent).__name__, (128, 128, 128))
+            pos = self.world_to_screen(agent.position)
+            pygame.draw.circle(self.main_map_surface, color, pos, 5)
+            self.draw_text(self.main_map_surface, agent.id, (pos[0] + 10, pos[1] - 10), self.fonts['small'])
+
+    def draw_tasks(self):
+        for task in self.env.tasks:
+            if not task.is_completed():
+                pos = self.world_to_screen(task.get_current_target())
+                pygame.draw.polygon(self.main_map_surface, self.colors['task'],
+                                    [(pos[0], pos[1] - 5), (pos[0] - 5, pos[1] + 5), (pos[0] + 5, pos[1] + 5)])
+
+    def update_info_panel(self, episode, step, episode_reward):
+        self.info_panel_surface.fill(self.colors['panel_bg'])
+        info_texts = [
             f"Episode: {episode}",
             f"Step: {step}",
-            f"Time: {self.env.time}",
-            f"Tasks: {len(self.env.tasks)}",
-            f"Completed: {sum(1 for task in self.env.tasks if task['status'] == 'completed')}"
+            f"Reward: {episode_reward:.2f}",
+            f"Time: {self.env.time:.1f}",
+            f"Weather: {self.env.weather_system.current_weather}"
         ]
-        for i, text in enumerate(info_text):
-            self.draw_text(text, (10, 10 + i * 30))
+        for i, text in enumerate(info_texts):
+            self.draw_text(self.info_panel_surface, text, (10, 10 + i * 25), self.fonts['medium'])
+
+        if self.selected_agent:
+            self.draw_agent_details(self.selected_agent)
+
+    def update_control_panel(self):
+        self.control_panel_surface.fill(self.colors['panel_bg'])
+        self.draw_text(self.control_panel_surface, "Controls", (10, 10), self.fonts['large'])
+        self.draw_text(self.control_panel_surface, "Click: Select Agent", (10, 50), self.fonts['medium'])
+        self.draw_text(self.control_panel_surface, "Scroll: Zoom", (10, 80), self.fonts['medium'])
+
+    def update_mini_map(self):
+        self.mini_map_surface.fill(self.colors['background'])
+        scale_x = self.mini_map_surface.get_width() / self.env.world.width
+        scale_y = self.mini_map_surface.get_height() / self.env.world.height
+
+        for agent in self.env.agents:
+            color = self.colors['agent_colors'].get(type(agent).__name__, (128, 128, 128))
+            pos = (int(agent.position[0] * scale_x), int(agent.position[1] * scale_y))
+            pygame.draw.circle(self.mini_map_surface, color, pos, 2)
+
+    def handle_input(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:  # 左键点击
+                clicked_agent = self.get_clicked_agent(event.pos)
+                if clicked_agent:
+                    self.selected_agent = clicked_agent
+            elif event.button == 4:  # 滚轮上滚
+                self.camera['zoom'] = min(2.0, self.camera['zoom'] * 1.1)
+            elif event.button == 5:  # 滚轮下滚
+                self.camera['zoom'] = max(0.5, self.camera['zoom'] / 1.1)
+
+    def get_clicked_agent(self, pos):
+        for agent in self.env.agents:
+            agent_pos = self.world_to_screen(agent.position)
+            if ((pos[0] - agent_pos[0]) ** 2 + (pos[1] - agent_pos[1]) ** 2) ** 0.5 < 5:
+                return agent
+        return None
+
+    def draw_agent_details(self, agent):
+        details = [
+            f"ID: {agent.id}",
+            f"Type: {type(agent).__name__}",
+            f"Position: ({agent.position[0]:.2f}, {agent.position[1]:.2f})",
+            f"Energy: {agent.energy:.2f}"
+        ]
+        for i, text in enumerate(details):
+            self.draw_text(self.info_panel_surface, text, (10, 150 + i * 25), self.fonts['small'])
+
+    def world_to_screen(self, position):
+        x = int((position[0] - self.camera['x']) * self.camera[
+            'zoom'] * self.main_map_surface.get_width() / self.env.world.width)
+        y = int((position[1] - self.camera['y']) * self.camera[
+            'zoom'] * self.main_map_surface.get_height() / self.env.world.height)
+        return (x, y)
+
+    def draw_text(self, surface, text, position, font, color=(0, 0, 0)):
+        text_surface = font.render(str(text), True, color)
+        surface.blit(text_surface, position)
 
     def close(self):
         pygame.quit()
