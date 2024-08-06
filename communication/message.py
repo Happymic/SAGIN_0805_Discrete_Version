@@ -10,4 +10,4 @@ class Message:
         self.size = len(str(content))  # Simple size estimation
 
     def __str__(self):
-        return f"Message from {self.sender.id} to {self.receiver.id}: {self.content}"
+        return f"Message from {self.sender.id} to {self.receiver.id}: {self.content[:20]}..."

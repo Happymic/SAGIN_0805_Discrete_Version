@@ -1,13 +1,14 @@
 import numpy as np
 
 class WeatherSystem:
-    def __init__(self, env_width, env_height):
+    def __init__(self, env_width, env_height, weather_change_rate):
         self.env_width = env_width
         self.env_height = env_height
+        self.weather_change_rate = weather_change_rate
         self.weather_map = np.zeros((env_width, env_height))
         self.weather_types = ["clear", "cloudy", "rainy", "stormy"]
         self.current_weather = "clear"
-        self.update_interval = 100  # Update weather every 100 time steps
+        self.update_interval = int(1 / weather_change_rate)  # 使用 weather_change_rate 来设置更新间隔
         self.time_since_last_update = 0
 
     def update(self):
@@ -40,3 +41,14 @@ class WeatherSystem:
             return 0.7 if agent_type in ["uav", "satellite"] else 0.9
         else:  # stormy
             return 0.5 if agent_type in ["uav", "satellite"] else 0.7
+
+    def reset(self):
+        self.weather_map.fill(0)
+        self.current_weather = "clear"
+        self.time_since_last_update = 0
+
+    def get_state(self):
+        return np.array([self.weather_types.index(self.current_weather) / len(self.weather_types)])
+
+    def get_state_dim(self):
+        return 1

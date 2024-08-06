@@ -38,7 +38,7 @@ class AStar:
                 if not self.is_valid(neighbor.position):
                     continue
 
-                if not self.env.world.is_valid_position(neighbor.position):
+                if not self.env.terrain.is_traversable(neighbor.position, "ground"):
                     continue
 
                 open_list.put(neighbor)

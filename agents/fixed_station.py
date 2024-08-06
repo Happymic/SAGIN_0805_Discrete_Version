@@ -52,10 +52,10 @@ class FixedStation(BaseAgent):
                 self.relay_messages(agent)
 
     def relay_messages(self, agent):
-        messages = self.env.get_messages_for(agent)
+        messages = self.env.communication_model.get_messages_for(agent)
         for message in messages:
-            if self.env.send_message(message, agent):
-                self.env.remove_message(message)
+            if self.env.communication_model.send_message(message.sender, agent, message.content):
+                self.env.communication_model.remove_message(message)
 
     def is_in_communication_range(self, other_agent):
         distance = np.linalg.norm(self.position - other_agent.position)
@@ -66,3 +66,9 @@ class FixedStation(BaseAgent):
             return f"Task {task.id} accepted for computation"
         else:
             return f"Unable to accept task {task.id} due to capacity constraints"
+
+    def get_state_dim(self):
+        return super().get_state_dim() + 2  # Add current_storage and computation_power to state
+
+    def get_action_dim(self):
+        return 0  # Fixed stations don't take actions in this model

@@ -1,7 +1,6 @@
 import numpy as np
 from .base_agent import BaseAgent
 
-
 class SignalDetector(BaseAgent):
     def __init__(self, agent_id, position, env):
         super().__init__(agent_id, position, env)
@@ -9,19 +8,13 @@ class SignalDetector(BaseAgent):
         self.detection_range = 20.0
 
     def act(self, state):
-        # Implement signal detection logic
         signals = self.detect_signals()
         if signals:
             return self.move_towards_strongest_signal(signals)
         return self.random_movement()
 
-    def update(self, action):
-        self.acceleration = action
-        self.move(self.env.time_step)
-        self.consume_energy(0.1)
-
     def detect_signals(self):
-        return self.env.get_signals_in_range(self.position, self.detection_range)
+        return self.env.get_objects_in_range(self.position, self.detection_range)
 
     def move_towards_strongest_signal(self, signals):
         strongest_signal = max(signals, key=lambda s: s.strength)
@@ -30,7 +23,6 @@ class SignalDetector(BaseAgent):
 
     def random_movement(self):
         return np.random.uniform(-1, 1, 2)
-
 
 class TransportVehicle(BaseAgent):
     def __init__(self, agent_id, position, env):
@@ -43,11 +35,6 @@ class TransportVehicle(BaseAgent):
         if self.current_task:
             return self.move_towards_task()
         return self.random_movement()
-
-    def update(self, action):
-        self.acceleration = action
-        self.move(self.env.time_step)
-        self.consume_energy(0.2)
 
     def move_towards_task(self):
         if self.current_task.is_completed():
@@ -72,7 +59,6 @@ class TransportVehicle(BaseAgent):
         self.current_cargo -= unloaded_amount
         return unloaded_amount
 
-
 class RescueVehicle(BaseAgent):
     def __init__(self, agent_id, position, env):
         super().__init__(agent_id, position, env)
@@ -84,11 +70,6 @@ class RescueVehicle(BaseAgent):
         if self.current_task:
             return self.move_towards_task()
         return self.move_towards_nearest_disaster()
-
-    def update(self, action):
-        self.acceleration = action
-        self.move(self.env.time_step)
-        self.consume_energy(0.3)
 
     def move_towards_task(self):
         if self.current_task.is_completed():

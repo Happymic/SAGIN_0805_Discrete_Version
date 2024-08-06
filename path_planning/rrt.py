@@ -51,7 +51,7 @@ class RRT:
         steps = int(distance / (self.step_size / 2))
         for i in range(steps + 1):
             point = from_point + direction * i / steps
-            if not self.env.world.is_valid_position(point):
+            if not self.env.world.is_valid_position(point) or not self.env.terrain.is_traversable(point, "ground"):
                 return False
         return True
 

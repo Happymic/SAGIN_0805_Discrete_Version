@@ -1,6 +1,8 @@
 import numpy as np
 from abc import ABC, abstractmethod
+import logging
 
+logger = logging.getLogger(__name__)
 
 class Sensor(ABC):
     def __init__(self, range, accuracy, failure_rate):
@@ -22,7 +24,6 @@ class Sensor(ABC):
     def add_noise(self, data):
         return data + np.random.normal(0, 1 - self.accuracy, data.shape)
 
-
 class Camera(Sensor):
     def __init__(self, range=50, accuracy=0.9, failure_rate=0.01, resolution=(640, 480)):
         super().__init__(range, accuracy, failure_rate)
@@ -31,15 +32,26 @@ class Camera(Sensor):
     def sense(self, agent, environment):
         self.check_failure()
         if not self.is_functioning:
+            logger.warning(f"Camera of agent {agent.id} is not functioning")
             return None
 
         objects = environment.get_objects_in_range(agent.position, self.range)
+        logger.debug(f"Camera sensing {len(objects)} objects for agent {agent.id}")
         image = np.zeros(self.resolution + (3,))  # RGB image
 
         for obj in objects:
             if np.random.random() < self.accuracy:
                 color = self.get_object_color(obj)
-                position = self.world_to_image(obj.position - agent.position)
+                if isinstance(obj, dict):
+                    if 'center' in obj:
+                        position = self.world_to_image(np.array(obj['center']) - agent.position)
+                    elif 'position' in obj:
+                        position = self.world_to_image(np.array(obj['position']) - agent.position)
+                    else:
+                        logger.warning(f"Object {obj} has no position information")
+                        continue
+                else:
+                    position = self.world_to_image(obj.position - agent.position)
                 self.draw_object(image, position, color)
 
         return self.add_noise(image)
@@ -55,14 +67,17 @@ class Camera(Sensor):
         max(0, x - 2):min(self.resolution[0], x + 3)] = color
 
     def get_object_color(self, obj):
-        # Define colors for different object types
         colors = {
             'obstacle': [128, 128, 128],
             'agent': [0, 255, 0],
             'task': [255, 0, 0]
         }
-        return colors.get(obj.type, [255, 255, 255])
-
+        if isinstance(obj, dict):
+            return colors.get(obj.get('type', 'unknown'), [255, 255, 255])
+        elif hasattr(obj, 'type'):
+            return colors.get(obj.type, [255, 255, 255])
+        else:
+            return [255, 255, 255]  # 默认白色
 
 class Lidar(Sensor):
     def __init__(self, range=100, accuracy=0.95, failure_rate=0.005, angular_resolution=1):
@@ -72,29 +87,48 @@ class Lidar(Sensor):
     def sense(self, agent, environment):
         self.check_failure()
         if not self.is_functioning:
+            logger.warning(f"Lidar of agent {agent.id} is not functioning")
             return None
 
         num_rays = int(360 / self.angular_resolution)
         distances = np.full(num_rays, self.range)
 
-        for i in range(num_rays):
-            angle = i * self.angular_resolution * np.pi / 180
-            direction = np.array([np.cos(angle), np.sin(angle)])
-            ray_end = agent.position + direction * self.range
+        try:
+            for i in range(num_rays):
+                angle = i * self.angular_resolution * np.pi / 180
+                direction = np.array([np.cos(angle), np.sin(angle)])
+                ray_end = agent.position + direction * self.range
 
-            for obj in environment.get_objects_in_range(agent.position, self.range):
-                intersection = self.ray_intersection(agent.position, ray_end, obj)
-                if intersection is not None:
-                    distance = np.linalg.norm(intersection - agent.position)
-                    distances[i] = min(distances[i], distance)
+                for obj in environment.get_objects_in_range(agent.position, self.range):
+                    if isinstance(obj, dict):
+                        if 'center' in obj:
+                            obj_position = np.array(obj['center'])
+                        elif 'position' in obj:
+                            obj_position = np.array(obj['position'])
+                        else:
+                            logger.warning(f"Object {obj} has no position information")
+                            continue
+                    else:
+                        obj_position = obj.position
+                    intersection = self.ray_intersection(agent.position, ray_end, obj_position)
+                    if intersection is not None:
+                        distance = np.linalg.norm(intersection - agent.position)
+                        distances[i] = min(distances[i], distance)
+        except Exception as e:
+            logger.error(f"Error in Lidar sensing for agent {agent.id}: {str(e)}")
+            return None
 
         return self.add_noise(distances)
-
-    def ray_intersection(self, start, end, obj):
-        # Implement ray-object intersection
-        # This will depend on the object types in your environment
-        pass
-
+    def ray_intersection(self, start, end, obj_position):
+        # Simplified ray-object intersection
+        # This assumes objects are points, which is not realistic but serves as a placeholder
+        direction = end - start
+        t = np.dot(obj_position - start, direction) / np.dot(direction, direction)
+        if 0 <= t <= 1:
+            intersection = start + t * direction
+            if np.linalg.norm(intersection - obj_position) < 1:  # Assuming object has radius of 1
+                return intersection
+        return None
 
 class Radar(Sensor):
     def __init__(self, range=200, accuracy=0.8, failure_rate=0.02, min_detection_size=1):
@@ -104,22 +138,35 @@ class Radar(Sensor):
     def sense(self, agent, environment):
         self.check_failure()
         if not self.is_functioning:
+            logger.warning(f"Radar of agent {agent.id} is not functioning")
             return None
 
         detected_objects = []
 
         for obj in environment.get_objects_in_range(agent.position, self.range):
-            if obj.size >= self.min_detection_size and np.random.random() < self.accuracy:
-                relative_position = obj.position - agent.position
-                relative_velocity = obj.velocity - agent.velocity
+            if isinstance(obj, dict):
+                if 'center' in obj:
+                    obj_position = np.array(obj['center'])
+                elif 'position' in obj:
+                    obj_position = np.array(obj['position'])
+                else:
+                    logger.warning(f"Object {obj} has no position information")
+                    continue
+                size = obj.get('radius', 0) if obj.get('type') == 'circle' else np.mean([np.linalg.norm(p) for p in obj.get('points', [])])
+            else:
+                obj_position = obj.position
+                size = getattr(obj, 'size', 0)
+
+            if size >= self.min_detection_size and np.random.random() < self.accuracy:
+                relative_position = obj_position - agent.position
+                relative_velocity = np.zeros(2)  # 假设静态对象，如果需要可以修改
                 detected_objects.append({
                     'position': self.add_noise(relative_position),
                     'velocity': self.add_noise(relative_velocity),
-                    'size': obj.size
+                    'size': size
                 })
 
         return detected_objects
-
 
 class GPS(Sensor):
     def __init__(self, accuracy=0.95, failure_rate=0.001):
@@ -128,6 +175,7 @@ class GPS(Sensor):
     def sense(self, agent, environment):
         self.check_failure()
         if not self.is_functioning:
+            logger.warning(f"GPS of agent {agent.id} is not functioning")
             return None
 
         true_position = agent.position

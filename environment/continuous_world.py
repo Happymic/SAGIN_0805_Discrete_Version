@@ -1,7 +1,6 @@
 import numpy as np
 from shapely.geometry import Point, Polygon
 
-
 class ContinuousWorld:
     def __init__(self, width, height, num_obstacles, num_pois):
         self.width = width
@@ -20,9 +19,9 @@ class ContinuousWorld:
             else:  # 30% chance of polygon obstacle
                 points = [(np.random.uniform(0, self.width), np.random.uniform(0, self.height)) for _ in
                           range(np.random.randint(3, 6))]
-                obstacles.append({"type": "polygon", "points": points})
+                center = np.mean(points, axis=0)
+                obstacles.append({"type": "polygon", "points": points, "center": center})
         return obstacles
-
     def generate_pois(self, num_pois):
         return [Point(np.random.uniform(0, self.width), np.random.uniform(0, self.height)) for _ in range(num_pois)]
 
@@ -43,6 +42,12 @@ class ContinuousWorld:
                     return False
         return True
 
+    # 修改 get_random_valid_position 方法：
+    def get_random_valid_position(self):
+        while True:
+            position = np.random.uniform(0, [self.width, self.height])
+            if self.is_valid_position(position):
+                return position
     def get_nearest_poi(self, position):
         return min(self.pois, key=lambda poi: poi.distance(Point(position)))
 
@@ -64,3 +69,20 @@ class ContinuousWorld:
         objects.extend([station for station in self.charging_stations if station.distance(point) <= range])
 
         return objects
+
+    def get_state(self):
+        # Return a flattened representation of the world state
+        state = []
+        for obstacle in self.obstacles:
+            if obstacle["type"] == "circle":
+                state.extend([obstacle["center"][0], obstacle["center"][1], obstacle["radius"]])
+            else:  # polygon
+                state.extend([coord for point in obstacle["points"] for coord in point])
+        for poi in self.pois:
+            state.extend([poi.x, poi.y])
+        for station in self.charging_stations:
+            state.extend([station.x, station.y])
+        return np.array(state)
+
+    def get_state_dim(self):
+        return len(self.get_state())

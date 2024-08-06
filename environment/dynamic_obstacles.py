@@ -1,7 +1,6 @@
 import numpy as np
 from shapely.geometry import Point
 
-
 class DynamicObstacle:
     def __init__(self, position, velocity, size, env_width, env_height):
         self.position = np.array(position)
@@ -27,3 +26,9 @@ class DynamicObstacle:
 
     def to_shapely(self):
         return Point(self.position).buffer(self.size)
+
+    def get_state(self):
+        return np.concatenate([self.position, self.velocity, [self.size]])
+
+    def get_state_dim(self):
+        return self.get_state().shape[0]

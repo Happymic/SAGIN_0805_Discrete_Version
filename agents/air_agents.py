@@ -1,7 +1,6 @@
 import numpy as np
 from .base_agent import BaseAgent
 
-
 class UAV(BaseAgent):
     def __init__(self, agent_id, position, env):
         super().__init__(agent_id, position, env)
@@ -19,15 +18,10 @@ class UAV(BaseAgent):
         return self.explore()
 
     def update(self, action):
-        horizontal_action = action[:2]
+        super().update(action)
         vertical_action = action[2]
-
-        self.acceleration = horizontal_action
-        self.move(self.env.time_step)
-
         self.altitude += vertical_action * self.vertical_speed * self.env.time_step
         self.altitude = np.clip(self.altitude, self.min_altitude, self.max_altitude)
-
         self.consume_energy(0.3 + 0.1 * abs(vertical_action))
 
     def perform_task(self):
@@ -48,7 +42,6 @@ class UAV(BaseAgent):
         return np.append(horizontal_action, vertical_action)
 
     def rescue_action(self):
-        # Similar to transport_action, but might prioritize speed
         return self.transport_action()
 
     def monitor_action(self):
@@ -59,10 +52,15 @@ class UAV(BaseAgent):
         return self.transport_action()
 
     def explore(self):
-        # Random exploration with altitude changes
         horizontal_action = np.random.uniform(-1, 1, 2)
         vertical_action = np.random.uniform(-1, 1)
         return np.append(horizontal_action, vertical_action)
 
     def get_camera_view(self):
         return self.env.get_objects_in_range(self.position, self.camera_range)
+
+    def get_state_dim(self):
+        return super().get_state_dim() + 1  # Add altitude to state
+
+    def get_action_dim(self):
+        return 3  # horizontal acceleration (2) and vertical speed (1)
