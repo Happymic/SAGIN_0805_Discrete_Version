@@ -1,5 +1,10 @@
+import heapq
+
 import numpy as np
 from queue import PriorityQueue
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Node:
     def __init__(self, position, g_cost, h_cost, parent=None):
@@ -18,16 +23,18 @@ class AStar:
         self.resolution = resolution
         self.agent_type = agent_type
         self.agent_size = agent_size
+        self.max_iterations = 10000  # 添加最大迭代次数限制
 
     def plan(self, start, goal):
-        self.goal = goal  # 添加这一行
+        self.goal = goal
         start_node = Node(start, 0, self.heuristic(start, goal))
-        open_list = PriorityQueue()
-        open_list.put(start_node)
+        open_list = []
+        heapq.heappush(open_list, start_node)
         closed_set = set()
+        iterations = 0
 
-        while not open_list.empty():
-            current_node = open_list.get()
+        while open_list and iterations < self.max_iterations:
+            current_node = heapq.heappop(open_list)
 
             if np.allclose(current_node.position, goal, atol=self.resolution):
                 return self.reconstruct_path(current_node)
@@ -41,11 +48,15 @@ class AStar:
                 if not self.is_valid(neighbor.position):
                     continue
 
-                if not self.env.terrain.is_traversable(neighbor.position, "ground"):
-                    continue
+                existing = next((node for node in open_list if np.allclose(node.position, neighbor.position)), None)
+                if existing is None or neighbor.g_cost < existing.g_cost:
+                    if existing:
+                        open_list.remove(existing)
+                    heapq.heappush(open_list, neighbor)
 
-                open_list.put(neighbor)
+            iterations += 1
 
+        logger.warning(f"A* path planning reached maximum iterations ({self.max_iterations})")
         return None  # No path found
 
     def reconstruct_path(self, node):

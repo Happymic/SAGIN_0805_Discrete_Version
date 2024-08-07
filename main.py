@@ -66,35 +66,27 @@ def train(env, hierarchical_maddpg, config, visualizer, distributed_sim):
         for step in range(config['max_steps_per_episode']):
             action = hierarchical_maddpg.select_action(state)
             next_state, reward, done, _ = env.step(action)
+
+            # 打印每个智能体的位置和速度
+            for i, agent in enumerate(env.agents):
+                logger.info(f"Agent {agent.id}: Position {agent.position}, Velocity {agent.velocity}")
+
             hierarchical_maddpg.store_transition(state, action, reward, next_state, done)
             state = next_state
             episode_reward += sum(reward)
 
-            if visualizer.update(env, episode, step, episode_reward) == False:
-                return  # 用户关闭了可视化窗口
+            if visualizer:
+                if not visualizer.update(env, episode, step, episode_reward):
+                    return
 
             if done:
                 break
 
-        episode_rewards.append(episode_reward)
+            if step % 10 == 0:
+                logger.info(f"Episode {episode}, Step {step}, Reward: {sum(reward):.2f}")
 
-        # 每个episode之后更新网络
         hierarchical_maddpg.update()
-
-        # 记录日志
-        if episode % 10 == 0:
-            avg_reward = np.mean(episode_rewards[-10:])
-            logger.info(f"Episode {episode}, Average Reward: {avg_reward}")
-
-        # 定期保存模型
-        if episode % config['save_interval'] == 0:
-            hierarchical_maddpg.save(f"models/hmaddpg_episode_{episode}.pth")
-
-        # 定期评估
-        if episode % config['eval_interval'] == 0:
-            eval_reward = evaluate(env, hierarchical_maddpg, config, visualizer, num_episodes=5)
-            logger.info(f"Evaluation at episode {episode}, Average Reward: {eval_reward}")
-
+        logger.info(f"Episode {episode}, Total Reward: {episode_reward:.2f}")
     # 保存最终模型
     hierarchical_maddpg.save("models/hmaddpg_final.pth")
 

@@ -17,7 +17,22 @@ class UAV(BaseAgent):
     def act(self, state):
         if self.current_task:
             return self.perform_task()
-        return self.explore()
+
+        # 寻找最近的PoI或灾难区域
+        nearest_poi = self.env.get_nearest_poi(self.position)
+        nearest_disaster = self.env.get_nearest_disaster(self.position)
+
+        if nearest_poi and nearest_disaster:
+            target = nearest_poi if np.random.random() < 0.6 else nearest_disaster
+        elif nearest_poi:
+            target = nearest_poi
+        elif nearest_disaster:
+            target = nearest_disaster
+        else:
+            return self.explore()
+
+        direction = target - self.position
+        return np.concatenate([direction[:3] * self.max_acceleration, [0, 0, 0]])
 
     def update(self, action):
         super().update(action)

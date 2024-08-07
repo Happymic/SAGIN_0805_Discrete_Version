@@ -47,6 +47,7 @@ class BaseAgent(ABC):
         if not self.is_functioning:
             return
 
+        old_position = self.position.copy()
         self.acceleration = np.clip(action[:3], -self.max_acceleration, self.max_acceleration)
         self.angular_velocity = np.clip(action[3:6], -np.pi, np.pi)
 
@@ -62,15 +63,29 @@ class BaseAgent(ABC):
             self.update_task()
         self.check_failure()
 
+        # 添加移动日志
+        if not np.allclose(old_position, self.position):
+            logger.info(f"Agent {self.id} moved from {old_position} to {self.position}")
+        else:
+            logger.warning(f"Agent {self.id} did not move")
+
     def move(self, delta_time):
         new_position = self.position + self.velocity * delta_time
         if self.env.is_valid_position(new_position, self.get_agent_type(), self.size, self.altitude):
             self.position = new_position
         else:
-            # 碰撞响应
-            self.velocity *= -0.5  # 反弹，减少速度
-            self.position += self.velocity * delta_time  # 微小移动
-            self.handle_collision()
+            # 寻找有效的移动方向
+            for _ in range(8):
+                random_direction = np.random.rand(3) - 0.5
+                random_direction /= np.linalg.norm(random_direction)
+                new_position = self.position + random_direction * self.max_speed * delta_time
+                if self.env.is_valid_position(new_position, self.get_agent_type(), self.size, self.altitude):
+                    self.position = new_position
+                    break
+
+        # 更新速度
+        self.velocity += self.acceleration * delta_time
+        self.velocity = np.clip(self.velocity, -self.max_speed, self.max_speed)
     def handle_collision(self):
         self.velocity = -0.5 * self.velocity  # 反弹
         self.collision_cooldown = 10  # 设置冷却时间

@@ -89,31 +89,32 @@ class SAGINEnv(gym.Env):
         return self.get_state()
 
     def step(self, actions):
+
         self.current_step += 1
         self.time += self.time_step
 
-        # Update environment
-        self._update_environment()
-
-        # Execute agent actions
+        # 执行agent动作
         rewards = []
         for agent, action in zip(self.agents, actions):
+            old_position = agent.position.copy()
             agent.update(action)
-            reward = self.calculate_reward(agent)
+            # 奖励移动
+            movement_reward = np.linalg.norm(agent.position - old_position)
+            reward = self.calculate_reward(agent) + movement_reward
             rewards.append(reward)
 
-        # Update tasks
+        # 更新环境和任务
+        self._update_environment()
         self.task_generator.update()
         self.task_allocator.update()
 
-        # Get new state
+        # 获取新状态
         new_state = self.get_state()
 
-        # Check if done
+        # 检查是否结束
         dones = [agent.is_done() or self.current_step >= self.max_steps for agent in self.agents]
         done = all(dones)
 
-        # Prepare info dictionary
         info = {
             'current_step': self.current_step,
             'time': self.time,
@@ -122,7 +123,6 @@ class SAGINEnv(gym.Env):
         }
 
         return new_state, rewards, done, info
-
     def calculate_reward(self, agent):
         reward = 0
 
@@ -142,10 +142,6 @@ class SAGINEnv(gym.Env):
         if agent.current_task:
             distance_to_task = np.linalg.norm(agent.position - agent.current_task.get_current_target())
             reward += 1 / (1 + distance_to_task)
-        if not self.check_collision(agent):
-            reward += 0.1
-        else:
-            reward -= 1
 
         return reward
 
@@ -217,7 +213,6 @@ class SAGINEnv(gym.Env):
                     return True
 
         return False
-
     def is_valid_position(self, position, agent_type, agent_size, altitude):
         return self.world.is_valid_position(position, agent_type, agent_size, altitude)
     def get_objects_in_range(self, position, range, agent_type):

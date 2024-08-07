@@ -77,20 +77,17 @@ class HierarchicalMADDPG:
 
         self.memory = deque(maxlen=100000)
         self.batch_size = 64
-
     def select_action(self, state, explore=True):
         actions = []
         state = np.array(state).flatten()
-        if state.shape[0] != self.state_dim:
-            logger.warning(f"Expected state dimension {self.state_dim}, but got {state.shape[0]}")
-            state = np.zeros(self.state_dim)  # Use zero vector as default state
-
         state_tensor = torch.FloatTensor(state).unsqueeze(0)
         for i in range(self.num_agents):
             action = self.actors[i](state_tensor).squeeze(0).detach().numpy()
             if explore:
                 action += np.random.normal(0, self.noise_std, size=action.shape)
             action = np.clip(action, -1, 1)
+            # 确保动作不为零
+            action += np.random.uniform(-0.1, 0.1, size=action.shape)
             actions.append(action)
         return actions
 

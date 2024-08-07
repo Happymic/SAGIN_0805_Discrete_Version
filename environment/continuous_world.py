@@ -15,9 +15,9 @@ class ContinuousWorld:
         grid_size = 20  # 网格大小
         for i in range(0, self.width, grid_size):
             for j in range(0, self.height, grid_size):
-                if np.random.random() < 0.3:  # 30% 概率生成障碍物
+                if np.random.random() < 0.05:  # 30% 概率生成障碍物
                     obstacle_size = np.random.uniform(5, 15)
-                    center = (i + grid_size/2, j + grid_size/2)
+                    center = (i + grid_size / 2, j + grid_size / 2)
                     height = np.random.uniform(5, 15)
                     obstacles.append({
                         "type": "rectangle",
@@ -27,7 +27,6 @@ class ContinuousWorld:
                         "z_height": height
                     })
         return obstacles
-
     def is_valid_position(self, position, agent_type, agent_size, altitude):
         if not (0 <= position[0] < self.width and 0 <= position[1] < self.height):
             return False
