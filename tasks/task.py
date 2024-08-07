@@ -10,13 +10,14 @@ class Task:
         self.priority = priority
         self.creation_time = creation_time
         self.deadline = deadline
-        self.env = env  # 添加这行
+        self.env = env
         self.progress = 0
         self.status = "pending"
         self.assigned_to = None
         self.data_size = data_size
         self.required_computation = required_computation
         self.dynamic_priority = priority
+
     def update_progress(self, amount):
         self.progress += amount
         if self.progress >= 100:
@@ -45,13 +46,17 @@ class Task:
 
     def get_current_target(self):
         if self.type in ["transport", "rescue"]:
-            return self.stages[self.current_stage]
+            return np.array(self.stages[self.current_stage], dtype=float)
         elif self.type == "monitor":
             center, radius = self.stages
             angle = (self.env.time * 0.1) % (2 * np.pi)
-            return center + radius * np.array([np.cos(angle), np.sin(angle)])
+            return np.array([
+                center[0] + radius * np.cos(angle),
+                center[1] + radius * np.sin(angle),
+                center[2] if len(center) > 2 else 0
+            ], dtype=float)
         else:  # compute
-            return self.stages[0]
+            return np.array(self.stages[0], dtype=float)
     def get_completion_percentage(self):
         return self.progress
 
@@ -62,8 +67,48 @@ class Task:
         return current_time > self.deadline
 
     def update_dynamic_priority(self):
-        time_factor = (self.deadline - self.env.time) / (self.deadline - self.creation_time)
-        self.dynamic_priority = self.priority * (2 - time_factor)
+        if self.env:
+            time_factor = (self.deadline - self.env.time) / (self.deadline - self.creation_time)
+            self.dynamic_priority = self.priority * (2 - time_factor)
+        else:
+            self.dynamic_priority = self.priority
 
     def __str__(self):
         return f"Task {self.id}: {self.type} (Priority: {self.priority}, Status: {self.status}, Progress: {self.progress}%)"
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'type': self.type,
+            'stages': self.stages,
+            'current_stage': self.current_stage,
+            'priority': self.priority,
+            'creation_time': self.creation_time,
+            'deadline': self.deadline,
+            'progress': self.progress,
+            'status': self.status,
+            'assigned_to': self.assigned_to.id if self.assigned_to else None,
+            'data_size': self.data_size,
+            'required_computation': self.required_computation,
+            'dynamic_priority': self.dynamic_priority
+        }
+
+    @classmethod
+    def from_dict(cls, data, env):
+        task = cls(
+            task_id=data['id'],
+            task_type=data['type'],
+            stages=data['stages'],
+            priority=data['priority'],
+            creation_time=data['creation_time'],
+            deadline=data['deadline'],
+            env=env,
+            data_size=data['data_size'],
+            required_computation=data['required_computation']
+        )
+        task.current_stage = data['current_stage']
+        task.progress = data['progress']
+        task.status = data['status']
+        task.assigned_to = env.get_agent_by_id(data['assigned_to']) if data['assigned_to'] else None
+        task.dynamic_priority = data['dynamic_priority']
+        return task

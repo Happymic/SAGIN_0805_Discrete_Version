@@ -4,7 +4,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
 class DistributedSimulation:
     def __init__(self, num_processes):
         self.num_processes = num_processes
@@ -23,9 +22,12 @@ class DistributedSimulation:
             flattened_results = [item for sublist in results for item in sublist]
             logger.info(f"Completed {len(flattened_results)} episodes across {self.num_processes} processes")
             return flattened_results
-        except Exception as e:
-            logger.error(f"Error in run_parallel_episodes: {str(e)}")
-            raise
+        except KeyboardInterrupt:
+            logger.info("Keyboard interrupt detected. Terminating processes...")
+            self.pool.terminate()
+            self.pool.join()
+        finally:
+            self.pool.close()
 
     @staticmethod
     def run_episodes_batch(config, hierarchical_maddpg, num_episodes):

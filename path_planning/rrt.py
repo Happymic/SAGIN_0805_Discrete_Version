@@ -31,7 +31,8 @@ class RRT:
             return self.goal
         return np.array([
             np.random.uniform(0, self.env.world.width),
-            np.random.uniform(0, self.env.world.height)
+            np.random.uniform(0, self.env.world.height),
+            np.random.uniform(0, self.env.world.height)  # Assuming height is used for z-coordinate
         ])
 
     def nearest_neighbor(self, point):
@@ -51,15 +52,16 @@ class RRT:
         steps = int(distance / (self.step_size / 2))
         for i in range(steps + 1):
             point = from_point + direction * i / steps
-            if not self.env.world.is_valid_position(point) or not self.env.terrain.is_traversable(point, "ground"):
+            if not self.env.world.is_valid_position(point) or not self.env.terrain.is_traversable(point, "air"):
                 return False
         return True
 
     def reconstruct_path(self, node):
         path = [node]
         while tuple(node) in self.parents:
-            node = self.parents[tuple(node)]
-            if node is None:
-                break
+            node = np.array(self.parents[tuple(node)])
             path.append(node)
         return path[::-1]
+
+    def set_goal(self, goal):
+        self.goal = np.array(goal)

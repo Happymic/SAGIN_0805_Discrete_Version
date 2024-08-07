@@ -57,6 +57,8 @@ def main():
         raise
 
 def train(env, hierarchical_maddpg, config, visualizer, distributed_sim):
+    # 创建模型保存目录
+    os.makedirs("models", exist_ok=True)
     episode_rewards = []
     for episode in range(config['num_episodes']):
         state = env.reset()

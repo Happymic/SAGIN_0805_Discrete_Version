@@ -83,7 +83,7 @@ class HierarchicalMADDPG:
         state = np.array(state).flatten()
         if state.shape[0] != self.state_dim:
             logger.warning(f"Expected state dimension {self.state_dim}, but got {state.shape[0]}")
-            state = np.zeros(self.state_dim)  # 使用零向量作为默认状态
+            state = np.zeros(self.state_dim)  # Use zero vector as default state
 
         state_tensor = torch.FloatTensor(state).unsqueeze(0)
         for i in range(self.num_agents):

@@ -35,7 +35,11 @@ class TaskAllocator:
 
     def is_agent_suitable(self, agent, task):
         return (task.type in agent.task_types and
-                agent.energy > agent.energy_consumption_rate * task.estimated_duration)
+                agent.energy > agent.energy_consumption_rate * self.estimate_task_duration(task))
+
+    def estimate_task_duration(self, task):
+        # Simple estimation, can be improved based on task type and complexity
+        return (task.deadline - task.creation_time) / 2
 
     def select_best_agent(self, agents, task):
         scores = []
@@ -77,7 +81,7 @@ class TaskAllocator:
         for task in self.task_queue:
             remaining_time = task.deadline - current_time
             if remaining_time > 0:
-                task.dynamic_priority = task.priority * (1 + (task.estimated_duration - remaining_time) / task.estimated_duration)
+                task.dynamic_priority = task.priority * (1 + (task.deadline - current_time) / (task.deadline - task.creation_time))
             else:
                 task.dynamic_priority = task.priority * 2  # Double priority for overdue tasks
 
@@ -87,16 +91,17 @@ class TaskAllocator:
         for agent_id, task in list(self.assigned_tasks.items()):
             if task.is_completed():
                 del self.assigned_tasks[agent_id]
-                agent = self.env.agents.get(agent_id)
+                agent = next((a for a in self.env.agents if a.id == agent_id), None)
                 if agent:
                     agent.complete_task()
                 logger.info(f"Task {task.id} completed by agent {agent_id}")
             elif task.is_failed():
                 del self.assigned_tasks[agent_id]
-                agent = self.env.agents.get(agent_id)
+                agent = next((a for a in self.env.agents if a.id == agent_id), None)
                 if agent:
                     agent.fail_task()
                 logger.info(f"Task {task.id} failed and unassigned from agent {agent_id}")
+
     def get_high_priority_tasks(self) -> List[Dict]:
         return [{"id": task.id, "priority": task.dynamic_priority}
                 for task in self.task_queue if task.dynamic_priority > self.task_priority_threshold]
@@ -109,7 +114,9 @@ class TaskAllocator:
         for agent_id, assigned_task in list(self.assigned_tasks.items()):
             if assigned_task == task:
                 del self.assigned_tasks[agent_id]
-                self.env.agents[agent_id].fail_task()
+                agent = next((a for a in self.env.agents if a.id == agent_id), None)
+                if agent:
+                    agent.fail_task()
         logger.info(f"Task {task.id} deadline reached and removed from the system")
 
     def get_state(self):

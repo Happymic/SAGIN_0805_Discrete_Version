@@ -1,92 +1,92 @@
 # Environment settings
-world_width: 500
-world_height: 500
-num_obstacles: 10
-num_pois: 5
-num_disaster_areas: 1
-num_dynamic_obstacles: 2
-max_time: 500
-time_step: 0.2
+world_width: 300
+world_height: 300
+num_obstacles: 5
+num_pois: 2
+num_disaster_areas: 0
+num_dynamic_obstacles: 0
+max_time: 50
+time_step: 0.5
 
 # Agent settings
-num_signal_detectors: 2
+num_signal_detectors: 1
 num_transport_vehicles: 1
 num_rescue_vehicles: 1
 num_uavs: 1
-num_satellites: 1
+num_satellites: 0
 num_fixed_stations: 1
-episodes_per_update: 5
-max_speed: 3.0
-max_acceleration: 1.5
-battery_capacity: 80.0
-energy_consumption_rate: 0.05
-max_steps: 500
+episodes_per_update: 2
+max_speed: 2.0
+max_acceleration: 1.0
+battery_capacity: 50.0
+energy_consumption_rate: 0.1
+max_steps: 50
 
 # Sensor settings
-camera_range: 30
-lidar_range: 60
-radar_range: 100
-gps_accuracy: 3
+camera_range: 20
+lidar_range: 30
+radar_range: 50
+gps_accuracy: 5
 
 # Communication settings
-short_range_protocol_range: 50
-long_range_protocol_range: 500
-packet_loss_rate: 0.05
-communication_delay: 0.1
+short_range_protocol_range: 30
+long_range_protocol_range: 200
+packet_loss_rate: 0.1
+communication_delay: 0.2
 
 # Task settings
-task_generation_rate: 0.05
-min_task_duration: 25
-max_task_duration: 100
+task_generation_rate: 0.03
+min_task_duration: 10
+max_task_duration: 40
 
 # Weather settings
-weather_change_rate: 0.005
+weather_change_rate: 0.01
 
 # Learning settings
-hidden_dim: 128
-num_options: 2
-actor_lr: 0.0005
-critic_lr: 0.001
-gamma: 0.99
-tau: 0.01
-batch_size: 32
-buffer_size: 100000
-noise_std: 0.1
+hidden_dim: 16
+num_options: 1
+actor_lr: 0.001
+critic_lr: 0.002
+gamma: 0.95
+tau: 0.05
+batch_size: 16
+buffer_size: 500
+noise_std: 0.2
 
 # Training settings
-num_episodes: 1000
-max_steps_per_episode: 500
-eval_interval: 50
-num_eval_episodes: 5
+num_episodes: 50
+max_steps_per_episode: 50
+eval_interval: 25
+num_eval_episodes: 2
 
 # Visualization settings
-screen_width: 640
-screen_height: 640
-fps: 30
+screen_width: 480
+screen_height: 480
+fps: 15
 
 state_components:
   include_agents: true
-  include_weather: true
-  include_terrain: true
-  terrain_resolution: 50
+  include_weather: false
+  include_terrain: false
+  terrain_resolution: 20
   include_time: true
   include_tasks: true
   include_obstacles: true
 
 # Dynamic obstacle settings
-dynamic_obstacle_speed: 1.5
-dynamic_obstacle_size: 8
+dynamic_obstacle_speed: 0
+dynamic_obstacle_size: 0
 
 # Agent step size
-agent_step_size: 0.8
+agent_step_size: 1.0
 
 # Task generation probability
-task_generation_probability: 0.05
+task_generation_probability: 0.03
 
 # Save interval for model checkpoints
-save_interval: 50
+save_interval: 25
 
 # Distributed simulation settings
-num_processes: 2
+num_processes: 1
 # Visualization settings
-visualization_interval: 1  # 添加这一行，表示每步都更新可视化
+visualization_interval: 2  # 每两步更新一次可视化

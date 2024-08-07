@@ -11,15 +11,18 @@ class FixedStation(BaseAgent):
         self.current_storage = 0
         self.task_queue = deque()
         self.extended_communication_range = 50.0  # Larger than regular agents
+        self.energy_consumption_rate = 0.05  # Lower energy consumption for fixed stations
+        self.max_speed = 0  # Fixed stations don't move
+        self.task_types = ["compute", "store", "relay"]
 
     def act(self, state):
         # Fixed stations don't move
-        return np.zeros(2)
+        return np.zeros(6)
 
     def update(self, action):
         self.process_tasks()
         self.manage_communications()
-        self.consume_energy(0.05)  # Lower energy consumption for fixed stations
+        self.consume_energy(self.energy_consumption_rate)
 
     def process_tasks(self):
         completed_tasks = []
@@ -38,6 +41,7 @@ class FixedStation(BaseAgent):
         for task in completed_tasks:
             self.task_queue.remove(task)
             self.env.task_completed(task)
+            self.current_storage -= task.data_size
 
     def offload_task(self, task):
         if self.current_storage + task.data_size <= self.storage_capacity:
@@ -67,8 +71,54 @@ class FixedStation(BaseAgent):
         else:
             return f"Unable to accept task {task.id} due to capacity constraints"
 
+    def get_state(self):
+        base_state = super().get_state()
+        fixed_station_state = np.array([
+            self.current_storage / self.storage_capacity,
+            len(self.task_queue) / 10,  # Normalize by assuming max 10 tasks in queue
+            self.computation_power / 100  # Normalize computation power
+        ])
+        return np.concatenate([base_state, fixed_station_state])
+
     def get_state_dim(self):
-        return super().get_state_dim() + 2  # Add current_storage and computation_power to state
+        return super().get_state_dim() + 3  # Add current_storage, task_queue_size, and computation_power to state
 
     def get_action_dim(self):
-        return 0  # Fixed stations don't take actions in this model
+        return 6  # Consistent with BaseAgent, though fixed stations don't use actions
+
+    def get_agent_type(self):
+        return "fixed"
+
+    def is_valid_position(self, position):
+        # Fixed stations don't move, so their initial position is always valid
+        return np.all(np.isclose(position, self.position))
+
+    def get_reward(self):
+        reward = super().get_reward()
+
+        # Reward for completing computational tasks
+        reward += len([task for task in self.task_queue if task.is_completed()]) * 0.5
+
+        # Reward for efficient use of storage
+        storage_efficiency = self.current_storage / self.storage_capacity
+        reward += storage_efficiency * 0.3
+
+        # Reward for communication relays
+        reward += self.env.communication_model.get_relay_count(self) * 0.1
+
+        return reward
+
+    def handle_collision(self):
+        # Fixed stations shouldn't experience collisions, but if they do, it's serious
+        self.is_functioning = False
+        self.energy = 0
+
+    def reset(self):
+        super().reset()
+        self.current_storage = 0
+        self.task_queue.clear()
+        self.is_functioning = True
+
+    def move(self, delta_time):
+        # Override move method to prevent any movement
+        pass

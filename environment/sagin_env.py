@@ -3,10 +3,9 @@ import numpy as np
 from gym import spaces
 from typing import List, Dict, Any
 import logging
-
+from shapely.geometry import Point, Polygon
 from .continuous_world import ContinuousWorld
 from .weather_system import WeatherSystem
-from .dynamic_obstacles import DynamicObstacle
 from .terrain import Terrain
 from communication.communication_model import CommunicationModel
 from tasks.task_generator import TaskGenerator
@@ -17,7 +16,6 @@ from agents.base_agent import BaseAgent
 from utils.event_scheduler import EventScheduler
 
 logger = logging.getLogger(__name__)
-
 class SAGINEnv(gym.Env):
     def __init__(self, config: Dict[str, Any]):
         super().__init__()
@@ -29,7 +27,6 @@ class SAGINEnv(gym.Env):
         self.terrain = Terrain(config['world_width'], config['world_height'])
         self.weather_system = WeatherSystem(config['world_width'], config['world_height'],
                                             config['weather_change_rate'])
-        self.dynamic_obstacles = self._create_dynamic_obstacles()
 
         # Initialize communication and task-related components
         self.communication_model = CommunicationModel(self)
@@ -37,7 +34,7 @@ class SAGINEnv(gym.Env):
         self.task_allocator = TaskAllocator(self)
 
         # Initialize path planning algorithms
-        self.a_star = AStar(self)
+        self.a_star = AStar(self, agent_type="ground", agent_size=1.0)  # Default values, adjust as needed
         self.rrt = RRT(self)
 
         # Initialize lists for agents, tasks, and disaster areas
@@ -56,24 +53,23 @@ class SAGINEnv(gym.Env):
         # Initialize event scheduler
         self.event_scheduler = EventScheduler()
 
+        # Create default agents
+        self._create_default_agents()
+
         # Define action and observation spaces
         self.action_space = spaces.Box(low=-1, high=1, shape=(self.get_action_dim(),), dtype=np.float32)
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.get_state_dim(),), dtype=np.float32)
-    def get_global_task_completion_rate(self):
-        completed_tasks = sum(1 for task in self.tasks if task.is_completed())
-        total_tasks = len(self.tasks)
-        return completed_tasks / total_tasks if total_tasks > 0 else 0
 
-    def _create_dynamic_obstacles(self):
-        obstacles = [DynamicObstacle(
-            position=np.random.uniform([0, 0], [self.config['world_width'], self.config['world_height']]),
-            velocity=np.random.uniform(-1, 1, 2),
-            size=np.random.uniform(1, 3),
-            env_width=self.config['world_width'],
-            env_height=self.config['world_height']
-        ) for _ in range(self.config['num_dynamic_obstacles'])]
-        print(f"Created {len(obstacles)} dynamic obstacles")
-        return obstacles
+    def _create_default_agents(self):
+        from agents import SignalDetector, TransportVehicle, RescueVehicle, UAV, Satellite, FixedStation
+
+        self.agents.append(SignalDetector("SD_0", self.world.get_random_valid_position("ground", 1.0), self))
+        self.agents.append(TransportVehicle("TV_0", self.world.get_random_valid_position("ground", 2.0), self))
+        self.agents.append(RescueVehicle("RV_0", self.world.get_random_valid_position("ground", 2.0), self))
+        self.agents.append(UAV("UAV_0", self.world.get_random_valid_position("air", 1.5), self))
+        self.agents.append(Satellite("SAT_0", self.world.get_random_valid_position("space", 5.0), self))
+        self.agents.append(FixedStation("FS_0", self.world.get_random_valid_position("ground", 3.0), self))
+
     def reset(self):
         logger.info("Resetting SAGIN environment")
         self.time = 0
@@ -82,13 +78,11 @@ class SAGINEnv(gym.Env):
         self.weather_system.reset()
         self.terrain.reset()
         self.time_of_day = np.random.randint(0, 24)
-        self.dynamic_obstacles = self._create_dynamic_obstacles()
-        print(f"Number of dynamic obstacles: {len(self.dynamic_obstacles)}")
         self.event_scheduler.clear()
 
         for agent in self.agents:
             agent.reset()
-            agent.position = self.world.get_random_valid_position()
+            agent.position = self.world.get_random_valid_position(agent.get_agent_type(), agent.size)
             logger.debug(f"Reset agent {agent.id}")
 
         logger.debug(f"Number of agents after reset: {len(self.agents)}")
@@ -98,28 +92,28 @@ class SAGINEnv(gym.Env):
         self.current_step += 1
         self.time += self.time_step
 
-        # 更新环境
+        # Update environment
         self._update_environment()
 
-        # 执行智能体动作
+        # Execute agent actions
+        rewards = []
         for agent, action in zip(self.agents, actions):
             agent.update(action)
+            reward = self.calculate_reward(agent)
+            rewards.append(reward)
 
-        # 更新任务
+        # Update tasks
         self.task_generator.update()
         self.task_allocator.update()
 
-        # 获取新的状态
+        # Get new state
         new_state = self.get_state()
 
-        # 计算奖励
-        rewards = [agent.get_reward() for agent in self.agents]
-
-        # 检查是否结束
+        # Check if done
         dones = [agent.is_done() or self.current_step >= self.max_steps for agent in self.agents]
         done = all(dones)
 
-        # 准备信息字典
+        # Prepare info dictionary
         info = {
             'current_step': self.current_step,
             'time': self.time,
@@ -129,37 +123,37 @@ class SAGINEnv(gym.Env):
 
         return new_state, rewards, done, info
 
+    def calculate_reward(self, agent):
+        reward = 0
+
+        # Task completion reward
+        if agent.current_task and agent.current_task.is_completed():
+            reward += 10
+
+        # Collision penalty
+        if agent.collision_cooldown > 0:
+            reward -= 5
+
+        # Energy efficiency reward
+        energy_efficiency = agent.energy / agent.max_energy
+        reward += energy_efficiency
+
+        # Distance to task reward
+        if agent.current_task:
+            distance_to_task = np.linalg.norm(agent.position - agent.current_task.get_current_target())
+            reward += 1 / (1 + distance_to_task)
+        if not self.check_collision(agent):
+            reward += 0.1
+        else:
+            reward -= 1
+
+        return reward
+
     def _update_environment(self):
         self.weather_system.update()
         self.terrain.update()
-        for obstacle in self.dynamic_obstacles:
-            obstacle.update(self.time_step)
         self.communication_model.update()
         self.update_time_of_day()
-
-    def _process_agent_actions(self, actions):
-        for agent, action in zip(self.agents, actions):
-            agent.update(action)
-            if self.check_collision(agent):
-                agent.handle_collision()
-
-    def _handle_tasks(self):
-        new_task = self.task_generator.update()
-        if new_task:
-            self.tasks.append(new_task)
-        self.task_allocator.update()
-
-    def _process_events(self):
-        events = self.event_scheduler.get_current_events(self.time)
-        for event in events:
-            self._handle_event(event)
-
-    def _handle_event(self, event):
-        if event.event_type == 'message_received':
-            self.communication_model.deliver_message(event.data)
-        elif event.event_type == 'task_deadline':
-            self.task_allocator.handle_task_deadline(event.data)
-        # Add more event types as needed
 
     def get_state(self):
         state_components = {}
@@ -179,11 +173,7 @@ class SAGINEnv(gym.Env):
         if self.config['state_components']['include_tasks']:
             state_components['tasks'] = self.task_allocator.get_state()
 
-        if self.config['state_components']['include_obstacles']:
-            state_components['obstacles'] = np.concatenate(
-                [obstacle.get_state() for obstacle in self.dynamic_obstacles])
-
-        state = np.concatenate(list(state_components.values()))
+        state = np.concatenate([component for component in state_components.values() if component.size > 0])
 
         print("State components:")
         for key, value in state_components.items():
@@ -194,68 +184,81 @@ class SAGINEnv(gym.Env):
 
     def get_state_dim(self):
         return self.get_state().shape[0]
+
     def get_action_dim(self):
         return sum(agent.get_action_dim() for agent in self.agents)
 
-    def get_rewards(self):
-        return [agent.get_reward() for agent in self.agents]
-
-    def get_dones(self):
-        return [agent.is_done() or self.current_step >= self.max_steps for agent in self.agents]
-
-    def get_info(self):
-        return {
-            "time": self.time,
-            "time_of_day": self.time_of_day,
-            "weather": self.weather_system.current_weather,
-            "num_completed_tasks": sum(task.is_completed() for task in self.tasks),
-            "num_active_tasks": sum(not task.is_completed() for task in self.tasks),
-            "agent_energy": {agent.id: agent.energy for agent in self.agents},
-            "communication_status": self.communication_model.get_status()
-        }
+    def get_global_task_completion_rate(self):
+        completed_tasks = sum(1 for task in self.tasks if task.is_completed())
+        total_tasks = len(self.tasks)
+        return completed_tasks / total_tasks if total_tasks > 0 else 0
 
     def update_time_of_day(self):
         self.time_of_day = (self.time_of_day + self.time_step / 3600) % 24
 
     def check_collision(self, agent):
-        # 检查与静态障碍物的碰撞
+        agent_position = Point(agent.position[0], agent.position[1])
+
         for obstacle in self.world.obstacles:
-            if obstacle['type'] == 'circle':
-                distance = np.linalg.norm(agent.position - obstacle['center'])
-                if distance <= obstacle['radius'] + agent.size:
-                    return True
-            elif obstacle['type'] == 'polygon':
-                # 这里需要实现多边形碰撞检测
-                pass
+            if obstacle['height'] > agent.altitude:
+                if obstacle['type'] == 'circle':
+                    center = Point(obstacle['center'])
+                    if agent_position.distance(center) <= obstacle['radius'] + agent.size:
+                        return True
+                elif obstacle['type'] == 'polygon':
+                    polygon = Polygon(obstacle['points'])
+                    if polygon.distance(agent_position) <= agent.size:
+                        return True
 
-        # 检查与动态障碍物的碰撞
-        for dynamic_obstacle in self.dynamic_obstacles:
-            if dynamic_obstacle.is_colliding(agent.position):
-                return True
-
-        # 检查与其他智能体的碰撞
         for other_agent in self.agents:
             if other_agent != agent:
-                distance = np.linalg.norm(agent.position - other_agent.position)
+                distance = np.linalg.norm(agent.position[:2] - other_agent.position[:2])
                 if distance <= agent.size + other_agent.size:
                     return True
 
         return False
 
+    def is_valid_position(self, position, agent_type, agent_size, altitude):
+        return self.world.is_valid_position(position, agent_type, agent_size, altitude)
+    def get_objects_in_range(self, position, range, agent_type):
+        objects = []
+        for obstacle in self.world.obstacles:
+            if agent_type == "ground" or obstacle['height'] > position[2]:
+                if obstacle['type'] == 'circle':
+                    center = np.array(obstacle['center'] + [obstacle['height']])
+                    if np.linalg.norm(center - position) <= range:
+                        objects.append(obstacle)
+                elif obstacle['type'] == 'polygon':
+                    center = np.mean(obstacle['points'], axis=0)
+                    center = np.append(center, obstacle['height'])
+                    if np.linalg.norm(center - position) <= range:
+                        objects.append(obstacle)
+
+        for agent in self.agents:
+            if np.linalg.norm(agent.position - position) <= range:
+                objects.append({'type': 'agent', 'position': agent.position, 'id': agent.id})
+
+        for task in self.tasks:
+            task_position = task.get_current_target()
+            if np.linalg.norm(task_position - position) <= range:
+                objects.append({'type': 'task', 'position': task_position})
+
+        return objects
     def send_message(self, sender, receiver, content, priority=1):
         return self.communication_model.send_message(sender, receiver, content, priority)
 
     def broadcast_message(self, sender, content, range):
         return self.communication_model.broadcast(sender, content, range)
 
-    def plan_path(self, start, goal, method='a_star'):
+    def plan_path(self, start, goal, method='a_star', agent_type="ground", agent_size=1.0):
         if method == 'a_star':
+            self.a_star.agent_type = agent_type
+            self.a_star.agent_size = agent_size
             return self.a_star.plan(start, goal)
         elif method == 'rrt':
             return self.rrt.plan(start, goal)
         else:
             raise ValueError(f"Unknown path planning method: {method}")
-
     def add_agent(self, agent):
         self.agents.append(agent)
         logger.info(f"Added agent {agent.id} to the environment")
@@ -264,32 +267,6 @@ class SAGINEnv(gym.Env):
         self.agents.remove(agent)
         logger.info(f"Removed agent {agent.id} from the environment")
 
-    def get_objects_in_range(self, position, range):
-        objects = []
-        for obstacle in self.world.obstacles:
-            if obstacle['type'] == 'circle':
-                if np.linalg.norm(np.array(obstacle['center']) - position) <= range:
-                    objects.append(obstacle)
-            elif obstacle['type'] == 'polygon':
-                if 'points' in obstacle:
-                    center = np.mean(obstacle['points'], axis=0)
-                    if np.linalg.norm(center - position) <= range:
-                        obstacle_with_center = obstacle.copy()
-                        obstacle_with_center['center'] = center
-                        objects.append(obstacle_with_center)
-                else:
-                    print(f"Warning: Polygon obstacle without 'points': {obstacle}")
-
-        # ... rest of the method ...
-        for agent in self.agents:
-            if np.linalg.norm(agent.position - position) <= range and not np.array_equal(agent.position, position):
-                objects.append({'type': 'agent', 'position': agent.position})
-
-        for task in self.tasks:
-            if np.linalg.norm(task.get_current_target() - position) <= range:
-                objects.append({'type': 'task', 'position': task.get_current_target()})
-
-        return objects
     def get_disaster_areas(self):
         return self.disaster_areas
 

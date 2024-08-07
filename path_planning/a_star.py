@@ -13,11 +13,14 @@ class Node:
         return self.f_cost < other.f_cost
 
 class AStar:
-    def __init__(self, env, resolution=1.0):
+    def __init__(self, env, resolution=1.0, agent_type="ground", agent_size=1.0):
         self.env = env
         self.resolution = resolution
+        self.agent_type = agent_type
+        self.agent_size = agent_size
 
     def plan(self, start, goal):
+        self.goal = goal  # 添加这一行
         start_node = Node(start, 0, self.heuristic(start, goal))
         open_list = PriorityQueue()
         open_list.put(start_node)
@@ -58,7 +61,7 @@ class AStar:
             for dy in [-self.resolution, 0, self.resolution]:
                 if dx == 0 and dy == 0:
                     continue
-                new_position = node.position + np.array([dx, dy])
+                new_position = node.position + np.array([dx, dy, 0])
                 g_cost = node.g_cost + np.linalg.norm([dx, dy])
                 h_cost = self.heuristic(new_position, self.goal)
                 neighbors.append(Node(new_position, g_cost, h_cost, node))
@@ -69,4 +72,8 @@ class AStar:
 
     def is_valid(self, position):
         return (0 <= position[0] < self.env.world.width and
-                0 <= position[1] < self.env.world.height)
+                0 <= position[1] < self.env.world.height and
+                self.env.world.is_valid_position(position, self.agent_type, self.agent_size,
+                                                 0))  # Assuming ground agents have altitude 0
+    def set_goal(self, goal):
+        self.goal = goal
