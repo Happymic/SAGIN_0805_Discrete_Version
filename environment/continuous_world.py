@@ -1,6 +1,6 @@
 import numpy as np
 from shapely.geometry import Point, Polygon
-
+import matplotlib
 
 class ContinuousWorld:
     def __init__(self, width, height, num_obstacles, num_pois):
