@@ -1,8 +1,8 @@
 import numpy as np
+import uuid
 
 class Task:
-    def __init__(self, task_id, task_type, stages, priority, creation_time, deadline, env=None, data_size=0,
-                 required_computation=0):
+    def __init__(self, task_id, task_type, stages, priority, creation_time, deadline, env, data_size=0, required_computation=0):
         self.id = task_id
         self.type = task_type
         self.stages = stages
@@ -17,11 +17,14 @@ class Task:
         self.data_size = data_size
         self.required_computation = required_computation
         self.dynamic_priority = priority
+        self.completion_rate = 1  # Units of progress per time step
 
-    def update_progress(self, amount):
-        self.progress += amount
+    def update(self, time_step):
+        self.progress += time_step * self.completion_rate
         if self.progress >= 100:
             self.complete()
+        elif self.env.time > self.deadline:
+            self.fail()
         self.update_dynamic_priority()
 
     def complete(self):
@@ -57,21 +60,11 @@ class Task:
             ], dtype=float)
         else:  # compute
             return np.array(self.stages[0], dtype=float)
-    def get_completion_percentage(self):
-        return self.progress
-
-    def get_remaining_time(self, current_time):
-        return max(0, self.deadline - current_time)
-
-    def is_expired(self, current_time):
-        return current_time > self.deadline
 
     def update_dynamic_priority(self):
         if self.env:
             time_factor = (self.deadline - self.env.time) / (self.deadline - self.creation_time)
             self.dynamic_priority = self.priority * (2 - time_factor)
-        else:
-            self.dynamic_priority = self.priority
 
     def __str__(self):
         return f"Task {self.id}: {self.type} (Priority: {self.priority}, Status: {self.status}, Progress: {self.progress}%)"

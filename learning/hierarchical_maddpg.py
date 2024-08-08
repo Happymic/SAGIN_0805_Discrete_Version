@@ -77,18 +77,18 @@ class HierarchicalMADDPG:
 
         self.memory = deque(maxlen=100000)
         self.batch_size = 64
+
     def select_action(self, state, explore=True):
         actions = []
-        state = np.array(state).flatten()
         state_tensor = torch.FloatTensor(state).unsqueeze(0)
-        for i in range(self.num_agents):
-            action = self.actors[i](state_tensor).squeeze(0).detach().numpy()
-            if explore:
-                action += np.random.normal(0, self.noise_std, size=action.shape)
-            action = np.clip(action, -1, 1)
-            # 确保动作不为零
-            action += np.random.uniform(-0.1, 0.1, size=action.shape)
-            actions.append(action)
+        with torch.no_grad():
+            for i in range(self.num_agents):
+                action = self.actors[i](state_tensor).squeeze(0).numpy()
+                if explore:
+                    action += np.random.normal(0, self.noise_std, size=action.shape)
+                action = np.clip(action, -1, 1)
+                action += np.random.uniform(-0.1, 0.1, size=action.shape)
+                actions.append(action)
         return actions
 
     def select_option(self, state, agent_index):
@@ -96,6 +96,8 @@ class HierarchicalMADDPG:
         return torch.multinomial(option_probs, 1).item()
 
     def store_transition(self, state, action, reward, next_state, done):
+        reward = sum(reward) if isinstance(reward, (list, np.ndarray)) else reward
+        done = any(done) if isinstance(done, (list, np.ndarray)) else done
         self.memory.append((state, action, reward, next_state, done))
 
     def update(self):
@@ -114,11 +116,11 @@ class HierarchicalMADDPG:
         # Update critics
         all_target_actions = []
         for i in range(self.num_agents):
-            all_target_actions.append(self.actors_target[i](next_state_batch[:, i]))
+            all_target_actions.append(self.actors_target[i](next_state_batch))
         all_target_actions = torch.cat(all_target_actions, dim=1)
 
         for i in range(self.num_agents):
-            target_q = reward_batch[:, i].unsqueeze(1) + self.gamma * (1 - done_batch[:, i].unsqueeze(1)) * \
+            target_q = reward_batch.unsqueeze(1) + self.gamma * (1 - done_batch.unsqueeze(1)) * \
                        self.critics_target[i](next_state_batch, all_target_actions)
             current_q = self.critics[i](state_batch, action_batch)
             critic_loss = nn.MSELoss()(current_q, target_q.detach())
@@ -128,7 +130,7 @@ class HierarchicalMADDPG:
 
         # Update actors
         for i in range(self.num_agents):
-            current_policy_actions = self.actors[i](state_batch[:, i])
+            current_policy_actions = self.actors[i](state_batch)
             all_actions = action_batch.clone()
             all_actions[:, i * self.action_dim:(i + 1) * self.action_dim] = current_policy_actions
             actor_loss = -self.critics[i](state_batch, all_actions).mean()
@@ -138,7 +140,6 @@ class HierarchicalMADDPG:
 
         # Soft update target networks
         self.soft_update_targets()
-
     def soft_update_targets(self):
         for i in range(self.num_agents):
             for target_param, param in zip(self.actors_target[i].parameters(), self.actors[i].parameters()):

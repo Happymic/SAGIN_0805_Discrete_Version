@@ -27,6 +27,7 @@ class BaseAgent(ABC):
         self.communication_range = 10.0
         self.sensor_range = 15.0
         self.current_task = None
+        self.last_completed_task = None
         self.path = None
         self.failure_probability = 0.001
         self.is_functioning = True
@@ -59,11 +60,13 @@ class BaseAgent(ABC):
         self.rotate(self.env.time_step)
         self.consume_energy(np.linalg.norm(self.velocity) * self.env.time_step * 0.1)
         self.sense()
+
         if self.current_task:
-            self.update_task()
+            if np.linalg.norm(self.position - self.current_task["position"]) < 1.0:
+                self.complete_task()
+
         self.check_failure()
 
-        # 添加移动日志
         if not np.allclose(old_position, self.position):
             logger.info(f"Agent {self.id} moved from {old_position} to {self.position}")
         else:
@@ -86,10 +89,12 @@ class BaseAgent(ABC):
         # 更新速度
         self.velocity += self.acceleration * delta_time
         self.velocity = np.clip(self.velocity, -self.max_speed, self.max_speed)
+
     def handle_collision(self):
         self.velocity = -0.5 * self.velocity  # 反弹
         self.collision_cooldown = 10  # 设置冷却时间
         self.energy -= 1  # 碰撞损失能量
+
     def rotate(self, delta_time):
         rotation = self.angular_velocity * delta_time
         rotation_matrix = self.euler_to_rotation_matrix(rotation)
@@ -118,6 +123,7 @@ class BaseAgent(ABC):
 
     def update_gps_position(self, gps_position):
         self.gps_position = gps_position
+
     def sense(self):
         sensor_data = {}
         for name, sensor in self.sensors.items():
@@ -134,22 +140,22 @@ class BaseAgent(ABC):
     def broadcast(self, content, range):
         return self.env.broadcast_message(self, content, range)
 
-    def assign_task(self, task):
-        self.current_task = task
-        self.plan_path(task.get_current_target())
+    def assign_task(self, poi):
+        self.current_task = poi
+        self.plan_path(poi["position"])
+        logger.info(f"Agent {self.id} assigned to POI {poi['id']}")
 
     def complete_task(self):
+        if self.current_task:
+            self.last_completed_task = self.current_task
+            self.current_task["completed"] = True
+            logger.info(f"Agent {self.id} completed task at POI {self.current_task['id']}")
         self.current_task = None
         self.path = None
 
-    def update_task(self):
-        if self.current_task.is_completed():
-            self.complete_task()
-        elif np.linalg.norm(self.position - self.current_task.get_current_target()) < 1.0:
-            self.current_task.update_progress(10)
+    def plan_path(self, goal):
+        self.path = self.env.plan_path(self.position, goal, 'a_star', self.get_agent_type(), self.size)
 
-    def plan_path(self, goal, method='a_star'):
-        self.path = self.env.plan_path(self.position, goal, method, self.get_agent_type(), self.size)
     def follow_path(self):
         if self.path and len(self.path) > 1:
             next_point = self.path[1]
@@ -181,8 +187,9 @@ class BaseAgent(ABC):
         reward = 0
 
         # Task completion reward
-        if self.current_task and self.current_task.is_completed():
-            reward += 10 * self.current_task.priority
+        if self.last_completed_task:
+            reward += 10 * self.last_completed_task["priority"]
+            self.last_completed_task = None
 
         # Energy consumption penalty
         energy_consumption = self.max_energy - self.energy
@@ -190,28 +197,28 @@ class BaseAgent(ABC):
 
         # Proximity to task target reward
         if self.current_task:
-            distance_to_target = np.linalg.norm(self.position - self.current_task.get_current_target())
+            distance_to_target = np.linalg.norm(self.position - self.current_task["position"])
             reward += 1 / (1 + distance_to_target)
 
         # Successful communication reward
         if hasattr(self, 'last_communication_success') and self.last_communication_success:
             reward += 1
+            self.last_communication_success = False
 
         # Collision avoidance reward
         if not self.env.check_collision(self):
             reward += 0.1
 
         # Global performance metric
-        global_task_completion_rate = self.env.get_global_task_completion_rate()
-        reward += global_task_completion_rate * 5
+        global_poi_completion_rate = self.env.get_global_poi_completion_rate()
+        reward += global_poi_completion_rate * 5
 
-        # Log detailed reward breakdown
         logger.debug(
-            f"Agent {self.id} reward breakdown: task completion: {10 * self.current_task.priority if self.current_task and self.current_task.is_completed() else 0}, "
+            f"Agent {self.id} reward breakdown: task completion: {10 * self.last_completed_task['priority'] if self.last_completed_task else 0}, "
             f"energy consumption: {-energy_consumption * 0.1}, distance to target: {1 / (1 + distance_to_target) if self.current_task else 0}, "
             f"communication: {1 if hasattr(self, 'last_communication_success') and self.last_communication_success else 0}, "
             f"collision avoidance: {0.1 if not self.env.check_collision(self) else 0}, "
-            f"global performance: {global_task_completion_rate * 5}")
+            f"global performance: {global_poi_completion_rate * 5}")
 
         return reward
 
@@ -225,13 +232,10 @@ class BaseAgent(ABC):
         self.angular_velocity = np.zeros(3)
         self.energy = self.max_energy
         self.current_task = None
+        self.last_completed_task = None
         self.path = None
         self.is_functioning = True
         self.position = self.env.world.get_random_valid_position(self.get_agent_type(), self.size)
-    def handle_collision(self):
-        self.velocity = np.zeros(3)
-        self.angular_velocity = np.zeros(3)
-        self.energy -= 5
 
     def check_failure(self):
         if np.random.random() < self.failure_probability:

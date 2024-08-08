@@ -30,7 +30,7 @@ class PygameVisualizer:
             'background': (240, 240, 240),
             'obstacle': (100, 100, 100),
             'agent': (0, 0, 255),
-            'task': (255, 0, 0),
+            'poi': (255, 0, 0),
             'text': (0, 0, 0),
         }
 
@@ -54,7 +54,7 @@ class PygameVisualizer:
         self.map_surface.fill(self.colors['background'])
         self.draw_obstacles()
         self.draw_agents()
-        self.draw_tasks()
+        self.draw_pois()
 
     def draw_obstacles(self):
         for obstacle in self.env.world.obstacles:
@@ -71,11 +71,12 @@ class PygameVisualizer:
             pygame.draw.circle(self.map_surface, self.colors['agent'], pos, 5)
             self.draw_text(self.map_surface, agent.id, (pos[0] + 10, pos[1] - 10))
 
-    def draw_tasks(self):
-        for task in self.env.tasks:
-            pos = self.world_to_screen(task.get_current_target())
-            pygame.draw.circle(self.map_surface, self.colors['task'], pos, 5)
-            self.draw_text(self.map_surface, f"T{task.id}", (pos[0] + 10, pos[1] - 10))
+    def draw_pois(self):
+        for poi in self.env.task_generator.pois:
+            pos = self.world_to_screen(poi['position'])
+            color = (0, 255, 0) if poi['completed'] else self.colors['poi']
+            pygame.draw.circle(self.map_surface, color, pos, 5)
+            self.draw_text(self.map_surface, f"P{poi['id']}", (pos[0] + 10, pos[1] - 10))
 
     def draw_sidebar(self, episode, step, episode_reward):
         self.sidebar_surface.fill(self.colors['background'])
@@ -84,21 +85,21 @@ class PygameVisualizer:
             f"Step: {step}",
             f"Reward: {episode_reward:.2f}",
             f"Time: {self.env.time:.1f}",
-            f"Tasks: {len(self.env.tasks)}",
-            f"Completed: {sum(task.is_completed() for task in self.env.tasks)}",
+            f"POIs: {len(self.env.task_generator.pois)}",
+            f"Completed: {sum(1 for poi in self.env.task_generator.pois if poi['completed'])}",
         ]
         for i, text in enumerate(info_texts):
             self.draw_text(self.sidebar_surface, text, (10, 10 + i * 30))
 
-        self.draw_task_info()
+        self.draw_poi_info()
         self.draw_agent_info()
 
-    def draw_task_info(self):
+    def draw_poi_info(self):
         y_offset = 200
-        self.draw_text(self.sidebar_surface, "Task Information:", (10, y_offset))
+        self.draw_text(self.sidebar_surface, "POI Information:", (10, y_offset))
         y_offset += 30
-        for task in self.env.tasks:
-            text = f"T{task.id}: {task.type} - Progress: {task.progress:.0f}%"
+        for poi in self.env.task_generator.pois:
+            text = f"P{poi['id']}: {poi['type']} - {'Completed' if poi['completed'] else 'Active'}"
             self.draw_text(self.sidebar_surface, text, (10, y_offset))
             y_offset += 25
 
@@ -107,7 +108,7 @@ class PygameVisualizer:
         self.draw_text(self.sidebar_surface, "Agent Information:", (10, y_offset))
         y_offset += 30
         for agent in self.env.agents:
-            text = f"{agent.id}: E={agent.energy:.0f}, T={agent.current_task.id if agent.current_task else 'None'}"
+            text = f"{agent.id}: E={agent.energy:.0f}, T={agent.current_task['id'] if agent.current_task else 'None'}"
             self.draw_text(self.sidebar_surface, text, (10, y_offset))
             y_offset += 25
 

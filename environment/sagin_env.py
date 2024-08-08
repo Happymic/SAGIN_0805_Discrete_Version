@@ -16,6 +16,7 @@ from agents.base_agent import BaseAgent
 from utils.event_scheduler import EventScheduler
 
 logger = logging.getLogger(__name__)
+
 class SAGINEnv(gym.Env):
     def __init__(self, config: Dict[str, Any]):
         super().__init__()
@@ -34,12 +35,11 @@ class SAGINEnv(gym.Env):
         self.task_allocator = TaskAllocator(self)
 
         # Initialize path planning algorithms
-        self.a_star = AStar(self, agent_type="ground", agent_size=1.0)  # Default values, adjust as needed
+        self.a_star = AStar(self)
         self.rrt = RRT(self)
 
         # Initialize lists for agents, tasks, and disaster areas
         self.agents: List[BaseAgent] = []
-        self.tasks = []
         self.disaster_areas = []
 
         # Initialize time-related variables
@@ -63,18 +63,26 @@ class SAGINEnv(gym.Env):
     def _create_default_agents(self):
         from agents import SignalDetector, TransportVehicle, RescueVehicle, UAV, Satellite, FixedStation
 
-        self.agents.append(SignalDetector("SD_0", self.world.get_random_valid_position("ground", 1.0), self))
-        self.agents.append(TransportVehicle("TV_0", self.world.get_random_valid_position("ground", 2.0), self))
-        self.agents.append(RescueVehicle("RV_0", self.world.get_random_valid_position("ground", 2.0), self))
-        self.agents.append(UAV("UAV_0", self.world.get_random_valid_position("air", 1.5), self))
-        self.agents.append(Satellite("SAT_0", self.world.get_random_valid_position("space", 5.0), self))
-        self.agents.append(FixedStation("FS_0", self.world.get_random_valid_position("ground", 3.0), self))
+        agent_types = {
+            'signal_detector': (SignalDetector, self.config['num_signal_detectors']),
+            'transport_vehicle': (TransportVehicle, self.config['num_transport_vehicles']),
+            'rescue_vehicle': (RescueVehicle, self.config['num_rescue_vehicles']),
+            'uav': (UAV, self.config['num_uavs']),
+            'satellite': (Satellite, self.config['num_satellites']),
+            'fixed_station': (FixedStation, self.config['num_fixed_stations'])
+        }
 
+        for agent_type, (AgentClass, num_agents) in agent_types.items():
+            for i in range(num_agents):
+                # 创建一个临时实例来获取 agent_type 和 size
+                temp_agent = AgentClass(f"{agent_type.upper()}_{i}", np.zeros(3), self)
+                position = self.world.get_random_valid_position(temp_agent.get_agent_type(), temp_agent.size)
+                # 使用正确的位置创建最终的 agent 实例
+                self.agents.append(AgentClass(f"{agent_type.upper()}_{i}", position, self))
     def reset(self):
         logger.info("Resetting SAGIN environment")
         self.time = 0
         self.current_step = 0
-        self.tasks.clear()
         self.weather_system.reset()
         self.terrain.reset()
         self.time_of_day = np.random.randint(0, 24)
@@ -85,53 +93,55 @@ class SAGINEnv(gym.Env):
             agent.position = self.world.get_random_valid_position(agent.get_agent_type(), agent.size)
             logger.debug(f"Reset agent {agent.id}")
 
+        self.task_generator.reset()
+        self.task_allocator.reset()
         logger.debug(f"Number of agents after reset: {len(self.agents)}")
         return self.get_state()
 
     def step(self, actions):
-
         self.current_step += 1
         self.time += self.time_step
 
-        # 执行agent动作
+        # Execute agent actions
         rewards = []
         for agent, action in zip(self.agents, actions):
             old_position = agent.position.copy()
             agent.update(action)
-            # 奖励移动
             movement_reward = np.linalg.norm(agent.position - old_position)
             reward = self.calculate_reward(agent) + movement_reward
             rewards.append(reward)
 
-        # 更新环境和任务
+        # Update environment and tasks
         self._update_environment()
         self.task_generator.update()
         self.task_allocator.update()
 
-        # 获取新状态
+        # Get new state
         new_state = self.get_state()
 
-        # 检查是否结束
+        # Check if episode is done
         dones = [agent.is_done() or self.current_step >= self.max_steps for agent in self.agents]
         done = all(dones)
 
         info = {
             'current_step': self.current_step,
             'time': self.time,
-            'global_task_completion_rate': self.get_global_task_completion_rate(),
-            'num_active_tasks': sum(1 for task in self.tasks if not task.is_completed()),
+            'global_poi_completion_rate': self.get_global_poi_completion_rate(),
+            'num_active_pois': len(self.task_generator.get_active_pois()),
         }
 
         return new_state, rewards, done, info
+
     def calculate_reward(self, agent):
         reward = 0
 
-        # Task completion reward
-        if agent.current_task and agent.current_task.is_completed():
-            reward += 10
+        # POI completion reward
+        if agent.last_completed_task:
+            reward += 10 * agent.last_completed_task["priority"]
+            agent.last_completed_task = None
 
         # Collision penalty
-        if agent.collision_cooldown > 0:
+        if self.check_collision(agent):
             reward -= 5
 
         # Energy efficiency reward
@@ -140,7 +150,7 @@ class SAGINEnv(gym.Env):
 
         # Distance to task reward
         if agent.current_task:
-            distance_to_task = np.linalg.norm(agent.position - agent.current_task.get_current_target())
+            distance_to_task = np.linalg.norm(agent.position - agent.current_task["position"])
             reward += 1 / (1 + distance_to_task)
 
         return reward
@@ -171,11 +181,7 @@ class SAGINEnv(gym.Env):
 
         state = np.concatenate([component for component in state_components.values() if component.size > 0])
 
-        print("State components:")
-        for key, value in state_components.items():
-            print(f"  {key}: {value.shape}")
-        print(f"Total state shape: {state.shape}")
-
+        logger.debug(f"State shape: {state.shape}")
         return state
 
     def get_state_dim(self):
@@ -184,10 +190,10 @@ class SAGINEnv(gym.Env):
     def get_action_dim(self):
         return sum(agent.get_action_dim() for agent in self.agents)
 
-    def get_global_task_completion_rate(self):
-        completed_tasks = sum(1 for task in self.tasks if task.is_completed())
-        total_tasks = len(self.tasks)
-        return completed_tasks / total_tasks if total_tasks > 0 else 0
+    def get_global_poi_completion_rate(self):
+        completed_pois = sum(1 for poi in self.task_generator.pois if poi["completed"])
+        total_pois = len(self.task_generator.pois)
+        return completed_pois / total_pois if total_pois > 0 else 0
 
     def update_time_of_day(self):
         self.time_of_day = (self.time_of_day + self.time_step / 3600) % 24
@@ -213,8 +219,10 @@ class SAGINEnv(gym.Env):
                     return True
 
         return False
+
     def is_valid_position(self, position, agent_type, agent_size, altitude):
         return self.world.is_valid_position(position, agent_type, agent_size, altitude)
+
     def get_objects_in_range(self, position, range, agent_type):
         objects = []
         for obstacle in self.world.obstacles:
@@ -233,12 +241,12 @@ class SAGINEnv(gym.Env):
             if np.linalg.norm(agent.position - position) <= range:
                 objects.append({'type': 'agent', 'position': agent.position, 'id': agent.id})
 
-        for task in self.tasks:
-            task_position = task.get_current_target()
-            if np.linalg.norm(task_position - position) <= range:
-                objects.append({'type': 'task', 'position': task_position})
+        for poi in self.task_generator.get_active_pois():
+            if np.linalg.norm(poi["position"] - position) <= range:
+                objects.append({'type': 'poi', 'position': poi["position"], 'id': poi["id"]})
 
         return objects
+
     def send_message(self, sender, receiver, content, priority=1):
         return self.communication_model.send_message(sender, receiver, content, priority)
 
@@ -254,6 +262,7 @@ class SAGINEnv(gym.Env):
             return self.rrt.plan(start, goal)
         else:
             raise ValueError(f"Unknown path planning method: {method}")
+
     def add_agent(self, agent):
         self.agents.append(agent)
         logger.info(f"Added agent {agent.id} to the environment")
@@ -265,9 +274,9 @@ class SAGINEnv(gym.Env):
     def get_disaster_areas(self):
         return self.disaster_areas
 
-    def add_disaster_area(self, position, radius):
-        self.disaster_areas.append({"position": position, "radius": radius})
-        logger.info(f"Added disaster area at position {position} with radius {radius}")
+    def add_disaster_area(self, disaster_area):
+        self.disaster_areas.append(disaster_area)
+        logger.info(f"Added disaster area at position {disaster_area['position']} with radius {disaster_area['radius']}")
 
     def remove_disaster_area(self, index):
         removed_area = self.disaster_areas.pop(index)
