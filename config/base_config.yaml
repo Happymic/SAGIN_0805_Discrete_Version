@@ -2,7 +2,7 @@
 world_width: 300
 world_height: 300
 num_obstacles: 5
-num_pois: 10
+num_pois: 5
 num_disaster_areas: 0
 num_dynamic_obstacles: 0
 max_time: 50
@@ -55,7 +55,7 @@ buffer_size: 500
 noise_std: 0.2
 
 # Training settings
-num_episodes: 50
+num_episodes: 30
 max_steps_per_episode: 50
 eval_interval: 25
 num_eval_episodes: 2

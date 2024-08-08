@@ -42,8 +42,12 @@ class BaseAgent(ABC):
 
     @abstractmethod
     def act(self, state):
+        if self.current_task and self.current_task["type"] == "charge":
+            return self.move_towards(self.current_task["position"])
         pass
-
+    def move_towards(self, target_position):
+        direction = target_position - self.position
+        return direction / np.linalg.norm(direction)
     def update(self, action):
         if not self.is_functioning:
             return
@@ -221,7 +225,8 @@ class BaseAgent(ABC):
             f"global performance: {global_poi_completion_rate * 5}")
 
         return reward
-
+    def charge(self, amount):
+        self.energy = min(self.max_energy, self.energy + amount)
     def is_done(self):
         return not self.is_functioning or self.energy <= 0
 

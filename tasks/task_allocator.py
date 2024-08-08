@@ -1,7 +1,7 @@
 import numpy as np
 from typing import List, Dict
 import logging
-
+from shapely import Point
 logger = logging.getLogger(__name__)
 
 class TaskAllocator:
@@ -10,7 +10,11 @@ class TaskAllocator:
 
     def allocate_tasks(self):
         for agent in self.env.agents:
-            if agent.current_task is None:
+            if agent.energy < agent.max_energy * 0.2:  # If energy is below 20%
+                nearest_station = min(self.env.world.charging_stations,
+                                      key=lambda s: Point(agent.position[0], agent.position[1]).distance(s))
+                agent.assign_task({"type": "charge", "position": np.array([nearest_station.x, nearest_station.y, 0])})
+            elif agent.current_task is None:
                 suitable_pois = [poi for poi in self.env.task_generator.get_active_pois()
                                  if poi["type"] in agent.task_types]
                 if suitable_pois:

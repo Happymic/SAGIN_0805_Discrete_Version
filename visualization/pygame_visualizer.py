@@ -55,7 +55,11 @@ class PygameVisualizer:
         self.draw_obstacles()
         self.draw_agents()
         self.draw_pois()
-
+        self.draw_charging_stations()
+    def draw_charging_stations(self):
+        for station in self.env.world.charging_stations:
+            pos = self.world_to_screen(np.array([station.x, station.y]))
+            pygame.draw.circle(self.map_surface, (0, 255, 255), pos, 10)
     def draw_obstacles(self):
         for obstacle in self.env.world.obstacles:
             if obstacle['type'] == 'rectangle':

@@ -10,6 +10,7 @@ class ContinuousWorld:
         self.pois = self.generate_pois(num_pois)
         self.charging_stations = self.generate_charging_stations()
 
+
     def generate_obstacles(self, num_obstacles):
         obstacles = []
         grid_size = 20  # 网格大小
@@ -60,8 +61,9 @@ class ContinuousWorld:
         return [Point(np.random.uniform(0, self.width), np.random.uniform(0, self.height)) for _ in range(num_pois)]
 
     def generate_charging_stations(self, num_stations=5):
-        return [Point(np.random.uniform(0, self.width), np.random.uniform(0, self.height)) for _ in range(num_stations)]
-
+        return [Point(np.random.uniform(0, self.width),
+                      np.random.uniform(0, self.height))
+                for _ in range(num_stations)]
     def get_random_valid_position(self, agent_type, agent_size):
         while True:
             if agent_type == "space":

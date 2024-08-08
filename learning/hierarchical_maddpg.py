@@ -63,9 +63,9 @@ class HierarchicalMADDPG:
         self.noise_std = 0.1
 
         self.actors = [Actor(state_dim, action_dim, hidden_dim).to(device) for _ in range(num_agents)]
-        self.critics = [Critic(state_dim * num_agents, action_dim * num_agents, hidden_dim).to(device) for _ in range(num_agents)]
+        self.critics = [Critic(state_dim, action_dim * num_agents, hidden_dim).to(device) for _ in range(num_agents)]
         self.actors_target = [Actor(state_dim, action_dim, hidden_dim).to(device) for _ in range(num_agents)]
-        self.critics_target = [Critic(state_dim * num_agents, action_dim * num_agents, hidden_dim).to(device) for _ in range(num_agents)]
+        self.critics_target = [Critic(state_dim, action_dim * num_agents, hidden_dim).to(device) for _ in range(num_agents)]
         self.high_level_policies = [HighLevelPolicy(state_dim, num_options, hidden_dim).to(device) for _ in range(num_agents)]
 
         self.actor_optimizers = [optim.Adam(self.actors[i].parameters(), lr=actor_lr) for i in range(num_agents)]
@@ -79,12 +79,13 @@ class HierarchicalMADDPG:
         self.memory = deque(maxlen=100000)
         self.batch_size = 64
 
-    def select_action(self, state):
+    def select_action(self, state, explore=True):
         state = torch.FloatTensor(state).unsqueeze(0).to(self.device)
         actions = []
         for i in range(self.num_agents):
             action = self.actors[i](state).squeeze(0).cpu().detach().numpy()
-            action += np.random.normal(0, self.noise_std, size=action.shape)
+            if explore:
+                action += np.random.normal(0, self.noise_std, size=action.shape)
             action = np.clip(action, -1, 1)
             actions.append(action)
         return actions
@@ -93,10 +94,10 @@ class HierarchicalMADDPG:
         return torch.multinomial(option_probs, 1).item()
 
     def store_transition(self, state, action, reward, next_state, done):
-        reward = sum(reward) if isinstance(reward, (list, np.ndarray)) else reward
-        done = any(done) if isinstance(done, (list, np.ndarray)) else done
+        state = np.array(state).flatten()
+        action = np.array(action).flatten()
+        next_state = np.array(next_state).flatten()
         self.memory.append((state, action, reward, next_state, done))
-
     def update(self):
         if len(self.memory) < self.batch_size:
             return
@@ -104,20 +105,17 @@ class HierarchicalMADDPG:
         batch = random.sample(self.memory, self.batch_size)
         state_batch, action_batch, reward_batch, next_state_batch, done_batch = map(np.array, zip(*batch))
 
-        state_batch = torch.FloatTensor(state_batch)
-        action_batch = torch.FloatTensor(action_batch)
-        reward_batch = torch.FloatTensor(reward_batch)
-        next_state_batch = torch.FloatTensor(next_state_batch)
-        done_batch = torch.FloatTensor(done_batch)
+        state_batch = torch.FloatTensor(state_batch).to(self.device)
+        action_batch = torch.FloatTensor(action_batch).to(self.device)
+        reward_batch = torch.FloatTensor(reward_batch).unsqueeze(1).to(self.device)
+        next_state_batch = torch.FloatTensor(next_state_batch).to(self.device)
+        done_batch = torch.FloatTensor(done_batch).unsqueeze(1).to(self.device)
 
         # Update critics
-        all_target_actions = []
-        for i in range(self.num_agents):
-            all_target_actions.append(self.actors_target[i](next_state_batch))
-        all_target_actions = torch.cat(all_target_actions, dim=1)
+        all_target_actions = torch.cat([self.actors_target[i](next_state_batch) for i in range(self.num_agents)], dim=1)
 
         for i in range(self.num_agents):
-            target_q = reward_batch.unsqueeze(1) + self.gamma * (1 - done_batch.unsqueeze(1)) * \
+            target_q = reward_batch + self.gamma * (1 - done_batch) * \
                        self.critics_target[i](next_state_batch, all_target_actions)
             current_q = self.critics[i](state_batch, action_batch)
             critic_loss = nn.MSELoss()(current_q, target_q.detach())

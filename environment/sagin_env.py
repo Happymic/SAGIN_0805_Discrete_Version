@@ -14,14 +14,16 @@ from path_planning.a_star import AStar
 from path_planning.rrt import RRT
 from agents.base_agent import BaseAgent
 from utils.event_scheduler import EventScheduler
+from visualization.pygame_visualizer import PygameVisualizer
 
 logger = logging.getLogger(__name__)
+
 
 class SAGINEnv(gym.Env):
     def __init__(self, config: Dict[str, Any]):
         super().__init__()
         self.config = config
-
+        self._resources_to_clean = []
         # Initialize world and environmental components
         self.world = ContinuousWorld(config['world_width'], config['world_height'],
                                      config['num_obstacles'], config['num_pois'])
@@ -60,6 +62,41 @@ class SAGINEnv(gym.Env):
         self.action_space = spaces.Box(low=-1, high=1, shape=(self.get_action_dim(),), dtype=np.float32)
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.get_state_dim(),), dtype=np.float32)
 
+        # Initialize visualizer
+        self.pygame_visualizer = PygameVisualizer(self, config)
+
+        # List to track resources that need cleaning
+        self._resources_to_clean = []
+
+    def __del__(self):
+        self.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def close(self):
+        """Clean up all resources"""
+        for resource in self._resources_to_clean:
+            if hasattr(resource, 'close'):
+                resource.close()
+            elif hasattr(resource, '__del__'):
+                resource.__del__()
+
+        self._resources_to_clean.clear()
+
+        if self.pygame_visualizer:
+            self.pygame_visualizer.close()
+
+        # Clear logging handlers
+        logging.getLogger().handlers.clear()
+
+    def add_resource_to_clean(self, resource):
+        """Add a resource that needs to be cleaned when the environment closes"""
+        self._resources_to_clean.append(resource)
+
     def _create_default_agents(self):
         from agents import SignalDetector, TransportVehicle, RescueVehicle, UAV, Satellite, FixedStation
 
@@ -74,11 +111,12 @@ class SAGINEnv(gym.Env):
 
         for agent_type, (AgentClass, num_agents) in agent_types.items():
             for i in range(num_agents):
-                # 创建一个临时实例来获取 agent_type 和 size
                 temp_agent = AgentClass(f"{agent_type.upper()}_{i}", np.zeros(3), self)
                 position = self.world.get_random_valid_position(temp_agent.get_agent_type(), temp_agent.size)
-                # 使用正确的位置创建最终的 agent 实例
-                self.agents.append(AgentClass(f"{agent_type.upper()}_{i}", position, self))
+                agent = AgentClass(f"{agent_type.upper()}_{i}", position, self)
+                self.agents.append(agent)
+                self.add_resource_to_clean(agent)
+
     def reset(self):
         logger.info("Resetting SAGIN environment")
         self.time = 0
@@ -106,10 +144,22 @@ class SAGINEnv(gym.Env):
         rewards = []
         for agent, action in zip(self.agents, actions):
             old_position = agent.position.copy()
+            old_energy = agent.energy
+
+            # Check if agent is at a charging station
+            if self.is_agent_at_charging_station(agent):
+                agent.charge(1.0)  # Charge by 1 unit per time step
+                action = np.zeros_like(action)  # Agent doesn't move while charging
+
             agent.update(action)
+
+            # Calculate rewards
             movement_reward = np.linalg.norm(agent.position - old_position)
-            reward = self.calculate_reward(agent) + movement_reward
-            rewards.append(reward)
+            energy_reward = (agent.energy - old_energy) * 0.1  # Reward for charging
+            task_reward = self.calculate_reward(agent)
+
+            total_reward = movement_reward + energy_reward + task_reward
+            rewards.append(total_reward)
 
         # Update environment and tasks
         self._update_environment()
@@ -128,10 +178,17 @@ class SAGINEnv(gym.Env):
             'time': self.time,
             'global_poi_completion_rate': self.get_global_poi_completion_rate(),
             'num_active_pois': len(self.task_generator.get_active_pois()),
+            'num_charging_agents': sum(1 for agent in self.agents if self.is_agent_at_charging_station(agent)),
         }
 
         return new_state, rewards, done, info
 
+    def is_agent_at_charging_station(self, agent):
+        agent_point = Point(agent.position[0], agent.position[1])
+        for station in self.world.charging_stations:
+            if agent_point.distance(station) < 5:  # Within 5 units
+                return True
+        return False
     def calculate_reward(self, agent):
         reward = 0
 
@@ -160,7 +217,6 @@ class SAGINEnv(gym.Env):
         self.terrain.update()
         self.communication_model.update()
         self.update_time_of_day()
-
     def get_state(self):
         state_components = {}
 
@@ -286,9 +342,8 @@ class SAGINEnv(gym.Env):
         self.event_scheduler.schedule_event(time, event_type, data)
 
     def render(self, mode='human'):
-        # Implement rendering logic here if needed
-        pass
-
+        if self.pygame_visualizer:
+            self.pygame_visualizer.render()
     def close(self):
         # Clean up resources if needed
         pass

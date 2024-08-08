@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import yaml
 import logging
+
+from torch.contrib._tensorboard_vis import visualize
 from tqdm import tqdm
 from environment.sagin_env import SAGINEnv
 from learning.hierarchical_maddpg import HierarchicalMADDPG
@@ -55,10 +57,19 @@ def main():
     if args.mode == "train":
         train(env, hierarchical_maddpg, config, device, visualizer)
     elif args.mode == "evaluate":
+        try:
+            hierarchical_maddpg.load("models/hmaddpg_final.pth")
+            logger.info("Model loaded successfully")
+        except FileNotFoundError:
+            logger.error("Model file not found. Please make sure you have trained the model first.")
+            return
+        except Exception as e:
+            logger.error(f"Error loading model: {str(e)}")
+            return
         evaluate(env, hierarchical_maddpg, config, visualizer)
     elif args.mode == "visualize":
         print("Visualize")
-        # visualize(env, hierarchical_maddpg, config)
+        visualize(env, hierarchical_maddpg, config)
 
 def train(env, hierarchical_maddpg, config, device, visualizer):
     os.makedirs("models", exist_ok=True)
@@ -97,12 +108,7 @@ def train(env, hierarchical_maddpg, config, device, visualizer):
     hierarchical_maddpg.save("models/hmaddpg_final.pth")
     plot_training_curve(episode_rewards, global_completion_rates)
 
-def evaluate(env, hierarchical_maddpg, config, visualizer, num_episodes=5):
-    try:
-        hierarchical_maddpg.load("models/hmaddpg_final.pth")
-    except FileNotFoundError:
-        logger.warning("No saved model found. Using the current model state.")
-
+def evaluate(env, hierarchical_maddpg, config, visualizer, num_episodes=10):
     total_rewards = []
     global_completion_rates = []
 
@@ -110,27 +116,34 @@ def evaluate(env, hierarchical_maddpg, config, visualizer, num_episodes=5):
         state = env.reset()
         episode_reward = 0
         done = False
+        step = 0
 
         while not done:
             action = hierarchical_maddpg.select_action(state, explore=False)
-            next_state, reward, done, _ = env.step(action)
+            next_state, reward, done, info = env.step(action)
             episode_reward += sum(reward)
             state = next_state
 
-            if visualizer.update(env, episode, env.current_step, episode_reward) == False:
-                return np.mean(total_rewards)  # 用户关闭了可视化窗口
+            # 更新可视化
+            if step % config['visualization_interval'] == 0:
+                if not visualizer.update(env, episode, step, episode_reward):
+                    logger.info("Visualization window closed. Stopping evaluation.")
+                    return
+
+            step += 1
 
         total_rewards.append(episode_reward)
         global_completion_rates.append(env.get_global_poi_completion_rate())
-        logger.info(
-            f"Evaluation Episode {episode}, Total Reward: {episode_reward}, Global Completion Rate: {global_completion_rates[-1]}")
+        logger.info(f"Evaluation Episode {episode + 1}/{num_episodes}, "
+                    f"Reward: {episode_reward:.2f}, "
+                    f"Completion Rate: {global_completion_rates[-1]:.2f}")
 
     avg_reward = np.mean(total_rewards)
     avg_completion_rate = np.mean(global_completion_rates)
-    logger.info(f"Average Evaluation Reward over {num_episodes} episodes: {avg_reward}")
-    logger.info(f"Average Global Completion Rate over {num_episodes} episodes: {avg_completion_rate}")
-    return avg_reward, avg_completion_rate
+    logger.info(f"Average Evaluation Reward: {avg_reward:.2f}")
+    logger.info(f"Average Global Completion Rate: {avg_completion_rate:.2f}")
 
+    return avg_reward, avg_completion_rate
 def plot_training_curve(episode_rewards, global_completion_rates):
     plt.figure(figsize=(12, 5))
 
