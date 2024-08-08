@@ -9,12 +9,12 @@ max_time: 50
 time_step: 0.5
 
 # Agent settings
-num_signal_detectors: 3
-num_transport_vehicles: 3
-num_rescue_vehicles: 3
-num_uavs: 3
-num_satellites: 2
-num_fixed_stations: 3
+num_signal_detectors: 1
+num_transport_vehicles: 1
+num_rescue_vehicles: 1
+num_uavs: 1
+num_satellites: 1
+num_fixed_stations: 1
 episodes_per_update: 2
 max_speed: 2.0
 max_acceleration: 1.0

@@ -52,20 +52,21 @@ class HighLevelPolicy(nn.Module):
         return self.network(state)
 
 class HierarchicalMADDPG:
-    def __init__(self, num_agents, state_dim, action_dim, hidden_dim, num_options, actor_lr, critic_lr, gamma, tau):
+    def __init__(self, num_agents, state_dim, action_dim, hidden_dim, num_options, actor_lr, critic_lr, gamma, tau, device):
         self.num_agents = num_agents
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.num_options = num_options
         self.gamma = gamma
         self.tau = tau
+        self.device = device
         self.noise_std = 0.1
 
-        self.actors = [Actor(state_dim, action_dim, hidden_dim) for _ in range(num_agents)]
-        self.critics = [Critic(state_dim * num_agents, action_dim * num_agents, hidden_dim) for _ in range(num_agents)]
-        self.actors_target = [Actor(state_dim, action_dim, hidden_dim) for _ in range(num_agents)]
-        self.critics_target = [Critic(state_dim * num_agents, action_dim * num_agents, hidden_dim) for _ in range(num_agents)]
-        self.high_level_policies = [HighLevelPolicy(state_dim, num_options, hidden_dim) for _ in range(num_agents)]
+        self.actors = [Actor(state_dim, action_dim, hidden_dim).to(device) for _ in range(num_agents)]
+        self.critics = [Critic(state_dim * num_agents, action_dim * num_agents, hidden_dim).to(device) for _ in range(num_agents)]
+        self.actors_target = [Actor(state_dim, action_dim, hidden_dim).to(device) for _ in range(num_agents)]
+        self.critics_target = [Critic(state_dim * num_agents, action_dim * num_agents, hidden_dim).to(device) for _ in range(num_agents)]
+        self.high_level_policies = [HighLevelPolicy(state_dim, num_options, hidden_dim).to(device) for _ in range(num_agents)]
 
         self.actor_optimizers = [optim.Adam(self.actors[i].parameters(), lr=actor_lr) for i in range(num_agents)]
         self.critic_optimizers = [optim.Adam(self.critics[i].parameters(), lr=critic_lr) for i in range(num_agents)]
@@ -78,19 +79,15 @@ class HierarchicalMADDPG:
         self.memory = deque(maxlen=100000)
         self.batch_size = 64
 
-    def select_action(self, state, explore=True):
+    def select_action(self, state):
+        state = torch.FloatTensor(state).unsqueeze(0).to(self.device)
         actions = []
-        state_tensor = torch.FloatTensor(state).unsqueeze(0)
-        with torch.no_grad():
-            for i in range(self.num_agents):
-                action = self.actors[i](state_tensor).squeeze(0).numpy()
-                if explore:
-                    action += np.random.normal(0, self.noise_std, size=action.shape)
-                action = np.clip(action, -1, 1)
-                action += np.random.uniform(-0.1, 0.1, size=action.shape)
-                actions.append(action)
+        for i in range(self.num_agents):
+            action = self.actors[i](state).squeeze(0).cpu().detach().numpy()
+            action += np.random.normal(0, self.noise_std, size=action.shape)
+            action = np.clip(action, -1, 1)
+            actions.append(action)
         return actions
-
     def select_option(self, state, agent_index):
         option_probs = torch.softmax(self.high_level_policies[agent_index](torch.FloatTensor(state)), dim=-1)
         return torch.multinomial(option_probs, 1).item()
