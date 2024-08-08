@@ -208,7 +208,7 @@ class SAGINEnv(gym.Env):
         # Distance to task reward
         if agent.current_task:
             distance_to_task = np.linalg.norm(agent.position - agent.current_task["position"])
-            reward += 1 / (1 + distance_to_task)
+            reward += 20 / (1 + distance_to_task)
 
         return reward
 

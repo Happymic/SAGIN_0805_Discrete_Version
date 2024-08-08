@@ -2,10 +2,10 @@
 world_width: 300
 world_height: 300
 num_obstacles: 5
-num_pois: 5
+num_pois: 4
 num_disaster_areas: 0
 num_dynamic_obstacles: 0
-max_time: 50
+max_time: 40
 time_step: 0.5
 
 # Agent settings
@@ -20,7 +20,7 @@ max_speed: 2.0
 max_acceleration: 1.0
 battery_capacity: 50.0
 energy_consumption_rate: 0.1
-max_steps: 30
+max_steps: 20
 
 # Sensor settings
 camera_range: 20
@@ -36,7 +36,7 @@ communication_delay: 0.2
 
 # Task settings
 task_generation_rate: 0.03
-min_task_duration: 10
+min_task_duration: 20
 max_task_duration: 40
 
 task_generation_interval: 10.0  # 尝试生成任务的时间间隔（秒）
@@ -51,19 +51,19 @@ critic_lr: 0.002
 gamma: 0.95
 tau: 0.05
 batch_size: 16
-buffer_size: 500
+buffer_size: 100
 noise_std: 0.2
 
 # Training settings
-num_episodes: 30
+num_episodes: 15
 max_steps_per_episode: 50
-eval_interval: 25
+eval_interval: 5
 num_eval_episodes: 2
 
 # Visualization settings
 screen_width: 480
 screen_height: 480
-fps: 15
+fps: 30
 
 state_components:
   include_agents: true
