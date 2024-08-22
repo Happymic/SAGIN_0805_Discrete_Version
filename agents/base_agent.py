@@ -29,6 +29,7 @@ class BaseAgent(ABC):
         self.current_task = None
         self.last_completed_task = None
         self.path = None
+        self.path_index = 0
         self.failure_probability = 0.001
         self.is_functioning = True
 
@@ -159,6 +160,7 @@ class BaseAgent(ABC):
 
     def plan_path(self, goal):
         self.path = self.env.plan_path(self.position, goal, 'a_star', self.get_agent_type(), self.size)
+        self.path_index = 0
 
     def follow_path(self):
         if self.path and len(self.path) > 1:

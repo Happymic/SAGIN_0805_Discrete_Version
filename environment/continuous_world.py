@@ -1,6 +1,8 @@
 import numpy as np
 from shapely.geometry import Point, Polygon
 import matplotlib
+from scipy.spatial import cKDTree
+
 
 class ContinuousWorld:
     def __init__(self, width, height, num_obstacles, num_pois):
@@ -9,14 +11,14 @@ class ContinuousWorld:
         self.obstacles = self.generate_obstacles(num_obstacles)
         self.pois = self.generate_pois(num_pois)
         self.charging_stations = self.generate_charging_stations()
-
+        self.obstacle_tree = self.build_obstacle_tree()
 
     def generate_obstacles(self, num_obstacles):
         obstacles = []
-        grid_size = 20  # 网格大小
+        grid_size = 20
         for i in range(0, self.width, grid_size):
             for j in range(0, self.height, grid_size):
-                if np.random.random() < 0.05:  # 30% 概率生成障碍物
+                if np.random.random() < 0.05:
                     obstacle_size = np.random.uniform(5, 15)
                     center = (i + grid_size / 2, j + grid_size / 2)
                     height = np.random.uniform(5, 15)
@@ -28,20 +30,28 @@ class ContinuousWorld:
                         "z_height": height
                     })
         return obstacles
+    def build_obstacle_tree(self):
+        points = [obstacle['center'] for obstacle in self.obstacles]
+        return cKDTree(points)
+
     def is_valid_position(self, position, agent_type, agent_size, altitude):
         if not (0 <= position[0] < self.width and 0 <= position[1] < self.height):
             return False
 
         if agent_type in ["air", "space"]:
-            if not (0 <= position[2] <= self.height):
+            if not (0 <= altitude <= self.height):
                 return False
         else:
-            position = np.array([position[0], position[1], altitude])
+            altitude = 0  # Ground agents always at altitude 0
 
         point = Point(position[:2])
 
-        for obstacle in self.obstacles:
-            if agent_type == "ground" or obstacle['z_height'] > position[2]:
+        # Use KD-tree to find nearby obstacles
+        nearby_obstacles = self.obstacle_tree.query_ball_point(position[:2], agent_size + 15)
+
+        for idx in nearby_obstacles:
+            obstacle = self.obstacles[idx]
+            if agent_type == "ground" or obstacle['z_height'] > altitude:
                 if obstacle['type'] == 'rectangle':
                     half_width = obstacle['width'] / 2
                     half_height = obstacle['height'] / 2

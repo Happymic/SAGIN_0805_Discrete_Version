@@ -1,9 +1,6 @@
 import heapq
 import numpy as np
-import logging
-
-logger = logging.getLogger(__name__)
-
+import time
 
 class Node:
     def __init__(self, position, g_cost, h_cost, parent=None):
@@ -22,22 +19,22 @@ class Node:
     def __hash__(self):
         return hash(self.position)
 
-
 class AStar:
     def __init__(self, env, resolution=1.0, agent_type="ground", agent_size=1.0):
         self.env = env
         self.resolution = resolution
         self.agent_type = agent_type
         self.agent_size = agent_size
-        self.max_iterations = 50000
+        self.max_iterations = 10000
+        self.max_time = 5  # Maximum time in seconds
         self.directions = [
-            (x, y, 0) for x in [-1, 0, 1] for y in [-1, 0, 1]
-            if (x, y) != (0, 0)
+            (x, y, z) for x in [-1, 0, 1] for y in [-1, 0, 1] for z in [-1, 0, 1]
+            if (x, y, z) != (0, 0, 0)
         ]
-        self.goal = None  # Initialize goal attribute
+        self.goal = None
 
     def plan(self, start, goal):
-        self.goal = goal  # Set the goal for this planning session
+        self.goal = goal
         start_node = Node(start, 0, self.heuristic(start, goal))
         goal_node = Node(goal, 0, 0)
 
@@ -47,7 +44,9 @@ class AStar:
         open_set[start_node.position] = start_node
 
         iterations = 0
-        while open_set and iterations < self.max_iterations:
+        start_time = time.time()
+
+        while open_set and iterations < self.max_iterations and (time.time() - start_time) < self.max_time:
             current = min(open_set.values(), key=lambda n: n.f_cost)
 
             if self.is_goal_reached(current, goal_node):
@@ -67,8 +66,7 @@ class AStar:
 
             iterations += 1
 
-        logger.warning(f"A* path planning reached maximum iterations ({self.max_iterations})")
-        return None
+        return None  # No path found
 
     def reconstruct_path(self, node):
         path = []
@@ -91,9 +89,7 @@ class AStar:
         return np.linalg.norm(np.array(a) - np.array(b))
 
     def is_valid(self, position):
-        return (0 <= position[0] < self.env.world.width and
-                0 <= position[1] < self.env.world.height and
-                self.env.world.is_valid_position(position, self.agent_type, self.agent_size, 0))
+        return self.env.is_valid_position(position, self.agent_type, self.agent_size, position[2])
 
     def is_goal_reached(self, current, goal):
         return np.linalg.norm(np.array(current.position) - np.array(goal.position)) < self.resolution

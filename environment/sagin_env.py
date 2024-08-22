@@ -276,8 +276,8 @@ class SAGINEnv(gym.Env):
 
         return False
 
-    def is_valid_position(self, position, agent_type, agent_size, altitude):
-        return self.world.is_valid_position(position, agent_type, agent_size, altitude)
+    def is_valid_position(self, position, agent_type, agent_size):
+        return self.world.is_valid_position(position, agent_type, agent_size, position[2])
 
     def get_objects_in_range(self, position, range, agent_type):
         objects = []

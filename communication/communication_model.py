@@ -61,7 +61,7 @@ class CommunicationModel:
             return False
         elif obstacle['type'] == 'polygon':
             # Implement polygon-line intersection check
-            # This is a simplified check and might not work for all cases
+
             points = np.array(obstacle['points'])
             for i in range(len(points)):
                 p1 = points[i]

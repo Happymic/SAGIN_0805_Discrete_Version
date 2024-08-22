@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 class TaskAllocator:
     def __init__(self, env):
         self.env = env
+        self.task_cache = {}  # Cache for task assignments
 
     def allocate_tasks(self):
         for agent in self.env.agents:
@@ -20,8 +21,18 @@ class TaskAllocator:
                 if suitable_pois:
                     nearest_poi = min(suitable_pois,
                                       key=lambda p: np.linalg.norm(agent.position - p["position"]))
-                    agent.assign_task(nearest_poi)
-                    logger.info(f"Assigned POI {nearest_poi['id']} to agent {agent.id}")
+                    self.assign_task(nearest_poi, agent)
+
+    def assign_task(self, task, agent):
+        task_id = task['id']
+        if task_id in self.task_cache and self.task_cache[task_id]['path'] is not None:
+            cached_path = self.task_cache[task_id]['path']
+            agent.assign_task(task, cached_path)
+        else:
+            path = self.env.plan_path(agent.position, task["position"], 'a_star', agent.get_agent_type(), agent.size)
+            self.task_cache[task_id] = {'path': path}
+            agent.assign_task(task, path)
+        logger.info(f"Assigned POI {task['id']} to agent {agent.id}")
 
     def update(self):
         self.allocate_tasks()
